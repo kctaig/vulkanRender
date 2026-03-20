@@ -5,8 +5,11 @@
 #include <string>
 #include <vector>
 
-#define GLFW_INCLUDE_VULKAN
-#include <GLFW/glfw3.h>
+#define NOMINMAX
+#define WIN32_LEAN_AND_MEAN
+#define VK_USE_PLATFORM_WIN32_KHR
+#include <Windows.h>
+#include <vulkan/vulkan.h>
 
 #include <glm/glm.hpp>
 
@@ -54,6 +57,7 @@ private:
 
     bool initWindow(unsigned int width, unsigned int height);
     bool initVulkan();
+    bool processWindowMessages();
     void createInstance();
     void createSurface();
     void pickPhysicalDevice();
@@ -71,9 +75,14 @@ private:
     void createUniformBuffers();
     void createDescriptorPool();
     void createDescriptorSets();
+    void createImGuiDescriptorPool();
+    void initImGui();
+    void shutdownImGui();
     void createCommandBuffers();
     void createSyncObjects();
     void updateUniformBuffer(std::uint32_t frameIndex, float timeSeconds);
+    void buildGui();
+    void appendOutput(std::string message);
     void drawFrame();
     void recordCommandBuffer(VkCommandBuffer commandBuffer, std::uint32_t imageIndex);
     void recreateSwapchain();
@@ -115,9 +124,15 @@ private:
     );
     VkImageView createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags) const;
     VkShaderModule createShaderModule(const std::vector<char>& code) const;
-    static void framebufferResizeCallback(GLFWwindow* window, int width, int height);
+    static LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
+    LRESULT handleWindowMessage(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
 
-    GLFWwindow* window_ = nullptr;
+    HWND windowHandle_ = nullptr;
+    HINSTANCE instanceHandle_ = nullptr;
+    bool windowRunning_ = true;
+    bool rightDragActive_ = false;
+    bool leftDragActive_ = false;
+    POINT lastMousePosition_{0, 0};
 
     VkInstance instance_ = VK_NULL_HANDLE;
     VkSurfaceKHR surface_ = VK_NULL_HANDLE;
@@ -128,6 +143,7 @@ private:
 
     VkSwapchainKHR swapchain_ = VK_NULL_HANDLE;
     std::vector<VkImage> swapchainImages_;
+    std::uint32_t swapchainMinImageCount_ = 2;
     VkFormat swapchainImageFormat_ = VK_FORMAT_UNDEFINED;
     VkExtent2D swapchainExtent_{};
     std::vector<VkImageView> swapchainImageViews_;
@@ -157,6 +173,7 @@ private:
     std::array<VkDeviceMemory, kMaxFramesInFlight> uniformBuffersMemory_{};
     VkDescriptorPool descriptorPool_ = VK_NULL_HANDLE;
     std::array<VkDescriptorSet, kMaxFramesInFlight> descriptorSets_{};
+    VkDescriptorPool imguiDescriptorPool_ = VK_NULL_HANDLE;
 
     std::array<VkSemaphore, kMaxFramesInFlight> imageAvailableSemaphores_{};
     std::vector<VkSemaphore> renderFinishedSemaphores_;
@@ -165,6 +182,12 @@ private:
     std::uint32_t currentFrame_ = 0;
 
     std::string meshInputPath_;
+    glm::vec3 modelTranslation_ = glm::vec3(0.0f);
+    float modelYawRadians_ = 0.0f;
+    float modelPitchRadians_ = 0.0f;
+    float cameraDistance_ = 3.5f;
+    std::vector<std::string> outputLines_;
+    bool autoScrollOutput_ = true;
     unsigned int windowWidth_ = 1600;
     unsigned int windowHeight_ = 900;
     bool framebufferResized_ = false;

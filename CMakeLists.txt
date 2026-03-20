@@ -11,7 +11,6 @@ include(cmake/CompilerWarnings.cmake)
 include(FetchContent)
 
 find_package(Vulkan REQUIRED)
-find_package(glfw3 CONFIG QUIET)
 find_package(glm CONFIG QUIET)
 
 if(NOT Vulkan_GLSLC_EXECUTABLE)
@@ -22,15 +21,28 @@ if(NOT Vulkan_GLSLC_EXECUTABLE)
     message(FATAL_ERROR "glslc not found. Install Vulkan SDK with glslc.")
 endif()
 
-if(NOT TARGET glfw)
-    message(STATUS "glfw target not found, fetching GLFW from GitHub...")
-    FetchContent_Declare(
-        glfw
-        GIT_REPOSITORY https://github.com/glfw/glfw.git
-        GIT_TAG 3.4
-    )
-    FetchContent_MakeAvailable(glfw)
-endif()
+FetchContent_Declare(
+    imgui
+    GIT_REPOSITORY https://github.com/ocornut/imgui.git
+    GIT_TAG docking
+)
+FetchContent_MakeAvailable(imgui)
+
+add_library(imgui STATIC
+    ${imgui_SOURCE_DIR}/imgui.cpp
+    ${imgui_SOURCE_DIR}/imgui_draw.cpp
+    ${imgui_SOURCE_DIR}/imgui_tables.cpp
+    ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_win32.cpp
+)
+
+target_include_directories(imgui PUBLIC
+    ${imgui_SOURCE_DIR}
+    ${imgui_SOURCE_DIR}/backends
+)
+
+target_link_libraries(imgui PUBLIC Vulkan::Vulkan)
 
 if(NOT TARGET glm::glm)
     message(STATUS "glm::glm target not found, fetching GLM from GitHub...")
@@ -46,7 +58,7 @@ set(VR_SOURCES
     src/main.cpp
     src/core/Application.cpp
     src/scene/MeshIO.cpp
-    src/renderer/RendererV2.cpp
+    src/renderer/Renderer.cpp
     src/renderer/Device.cpp
     src/renderer/Swapchain.cpp
     src/renderer/ResourceManager.cpp
@@ -90,7 +102,7 @@ add_custom_target(vulkan_shaders ALL DEPENDS ${VR_SHADER_OUTPUTS})
 add_dependencies(vulkan_renderer vulkan_shaders)
 
 target_include_directories(vulkan_renderer PRIVATE src)
-target_link_libraries(vulkan_renderer PRIVATE Vulkan::Vulkan glfw glm::glm)
+target_link_libraries(vulkan_renderer PRIVATE Vulkan::Vulkan glm::glm imgui user32 gdi32 shell32)
 
 target_compile_definitions(vulkan_renderer PRIVATE
     $<$<BOOL:${VR_ENABLE_VALIDATION}>:VR_ENABLE_VALIDATION=1>
