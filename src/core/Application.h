@@ -6,7 +6,7 @@ namespace vr {
 
 class Application {
 public:
-    int run();
+    int run(int argc, char** argv);
 
 private:
     Renderer renderer_;
