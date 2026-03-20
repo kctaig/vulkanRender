@@ -45,7 +45,8 @@ endif()
 set(VR_SOURCES
     src/main.cpp
     src/core/Application.cpp
-    src/renderer/Renderer.cpp
+    src/scene/MeshIO.cpp
+    src/renderer/RendererV2.cpp
     src/renderer/Device.cpp
     src/renderer/Swapchain.cpp
     src/renderer/ResourceManager.cpp
@@ -94,6 +95,7 @@ target_link_libraries(vulkan_renderer PRIVATE Vulkan::Vulkan glfw glm::glm)
 target_compile_definitions(vulkan_renderer PRIVATE
     $<$<BOOL:${VR_ENABLE_VALIDATION}>:VR_ENABLE_VALIDATION=1>
     VR_SHADER_DIR="${VR_SHADER_BINARY_DIR}"
+    VR_ASSET_DIR="${CMAKE_CURRENT_SOURCE_DIR}/assets"
 )
 
 set_project_warnings(vulkan_renderer)
