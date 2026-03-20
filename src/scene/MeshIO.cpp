@@ -1,9 +1,11 @@
 #include "scene/MeshIO.h"
 
+#include <algorithm>
 #include <fstream>
+#include <future>
 #include <sstream>
 #include <string>
-#include <unordered_map>
+#include <thread>
 #include <vector>
 
 namespace vr {
@@ -17,15 +19,6 @@ struct FaceVertexKey {
 
     bool operator==(const FaceVertexKey& other) const {
         return positionIndex == other.positionIndex && uvIndex == other.uvIndex && normalIndex == other.normalIndex;
-    }
-};
-
-struct FaceVertexKeyHash {
-    std::size_t operator()(const FaceVertexKey& key) const {
-        std::size_t hash = std::hash<int>{}(key.positionIndex);
-        hash ^= std::hash<int>{}(key.uvIndex) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
-        hash ^= std::hash<int>{}(key.normalIndex) + 0x9e3779b9 + (hash << 6) + (hash >> 2);
-        return hash;
     }
 };
 
@@ -78,8 +71,7 @@ bool loadObjMesh(const std::string& filePath, MeshInputData& outMesh) {
     std::vector<glm::vec3> positions;
     std::vector<glm::vec3> normals;
     std::vector<glm::vec2> uvs;
-
-    std::unordered_map<FaceVertexKey, std::uint32_t, FaceVertexKeyHash> vertexCache;
+    std::vector<std::vector<FaceVertexKey>> faces;
 
     std::string line;
     while (std::getline(file, line)) {
@@ -105,21 +97,50 @@ bool loadObjMesh(const std::string& filePath, MeshInputData& outMesh) {
             lineStream >> normal.x >> normal.y >> normal.z;
             normals.push_back(normal);
         } else if (prefix == "f") {
-            std::vector<std::uint32_t> faceIndices;
+            std::vector<FaceVertexKey> faceKeys;
             std::string token;
             while (lineStream >> token) {
                 if (!token.empty()) {
                     FaceVertexKey key = parseFaceToken(token);
-                    if (key.positionIndex < 0 || static_cast<std::size_t>(key.positionIndex) >= positions.size()) {
-                        continue;
+                    if (key.positionIndex >= 0 && static_cast<std::size_t>(key.positionIndex) < positions.size()) {
+                        faceKeys.push_back(key);
                     }
+                }
+            }
 
-                    auto found = vertexCache.find(key);
-                    if (found != vertexCache.end()) {
-                        faceIndices.push_back(found->second);
-                        continue;
-                    }
+            if (faceKeys.size() >= 3) {
+                faces.push_back(std::move(faceKeys));
+            }
+        }
+    }
 
+    if (faces.empty()) {
+        return false;
+    }
+
+    const std::size_t faceCount = faces.size();
+    const std::size_t hardwareThreads = std::max<std::size_t>(1, std::thread::hardware_concurrency());
+    const std::size_t workerCount = std::min(hardwareThreads, faceCount);
+
+    std::vector<std::vector<MeshVertexInput>> workerVertices(workerCount);
+    std::vector<std::vector<std::uint32_t>> workerIndices(workerCount);
+    std::vector<std::future<void>> tasks;
+    tasks.reserve(workerCount);
+
+    for (std::size_t worker = 0; worker < workerCount; ++worker) {
+        tasks.push_back(std::async(std::launch::async, [&, worker]() {
+            const std::size_t start = faceCount * worker / workerCount;
+            const std::size_t end = faceCount * (worker + 1) / workerCount;
+
+            auto& localVertices = workerVertices[worker];
+            auto& localIndices = workerIndices[worker];
+
+            for (std::size_t faceIndex = start; faceIndex < end; ++faceIndex) {
+                const auto& face = faces[faceIndex];
+                std::vector<std::uint32_t> localFaceIndices;
+                localFaceIndices.reserve(face.size());
+
+                for (const FaceVertexKey& key : face) {
                     MeshVertexInput vertex{};
                     vertex.position = positions[static_cast<std::size_t>(key.positionIndex)];
 
@@ -131,23 +152,40 @@ bool loadObjMesh(const std::string& filePath, MeshInputData& outMesh) {
                         vertex.uv = uvs[static_cast<std::size_t>(key.uvIndex)];
                     }
 
-                    const std::uint32_t vertexIndex = static_cast<std::uint32_t>(outMesh.vertices.size());
-                    outMesh.vertices.push_back(vertex);
-                    vertexCache.emplace(key, vertexIndex);
-                    faceIndices.push_back(vertexIndex);
+                    localFaceIndices.push_back(static_cast<std::uint32_t>(localVertices.size()));
+                    localVertices.push_back(vertex);
+                }
+
+                for (std::size_t i = 1; i + 1 < localFaceIndices.size(); ++i) {
+                    localIndices.push_back(localFaceIndices[0]);
+                    localIndices.push_back(localFaceIndices[i]);
+                    localIndices.push_back(localFaceIndices[i + 1]);
                 }
             }
+        }));
+    }
 
-            if (faceIndices.size() < 3) {
-                continue;
-            }
+    for (auto& task : tasks) {
+        task.get();
+    }
 
-            for (std::size_t i = 1; i + 1 < faceIndices.size(); ++i) {
-                outMesh.indices.push_back(faceIndices[0]);
-                outMesh.indices.push_back(faceIndices[i]);
-                outMesh.indices.push_back(faceIndices[i + 1]);
-            }
+    std::size_t totalVertexCount = 0;
+    std::size_t totalIndexCount = 0;
+    for (std::size_t worker = 0; worker < workerCount; ++worker) {
+        totalVertexCount += workerVertices[worker].size();
+        totalIndexCount += workerIndices[worker].size();
+    }
+
+    outMesh.vertices.reserve(totalVertexCount);
+    outMesh.indices.reserve(totalIndexCount);
+
+    std::uint32_t vertexBase = 0;
+    for (std::size_t worker = 0; worker < workerCount; ++worker) {
+        outMesh.vertices.insert(outMesh.vertices.end(), workerVertices[worker].begin(), workerVertices[worker].end());
+        for (std::uint32_t localIndex : workerIndices[worker]) {
+            outMesh.indices.push_back(localIndex + vertexBase);
         }
+        vertexBase += static_cast<std::uint32_t>(workerVertices[worker].size());
     }
 
     return !outMesh.vertices.empty() && !outMesh.indices.empty();

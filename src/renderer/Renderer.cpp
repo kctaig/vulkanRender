@@ -18,6 +18,7 @@
 #include <backends/imgui_impl_vulkan.h>
 #include <backends/imgui_impl_win32.h>
 
+#include <commdlg.h>
 #include <Windowsx.h>
 
 #include <glm/gtc/matrix_transform.hpp>
@@ -780,10 +781,142 @@ void Renderer::loadMeshVertices() {
         meshVertices_.assign(kFallbackVertices.begin(), kFallbackVertices.end());
         meshIndices_.assign(kFallbackIndices.begin(), kFallbackIndices.end());
     }
+
+    refreshSceneScaleParams();
+}
+
+bool Renderer::openModelFileDialog(std::string& outPath) const {
+    std::array<char, MAX_PATH> filePathBuffer{};
+
+    OPENFILENAMEA dialogInfo{};
+    dialogInfo.lStructSize = sizeof(dialogInfo);
+    dialogInfo.hwndOwner = windowHandle_;
+    dialogInfo.lpstrFilter = "OBJ Files (*.obj)\0*.obj\0All Files (*.*)\0*.*\0";
+    dialogInfo.lpstrFile = filePathBuffer.data();
+    dialogInfo.nMaxFile = static_cast<DWORD>(filePathBuffer.size());
+    dialogInfo.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
+    dialogInfo.lpstrDefExt = "obj";
+
+    if (GetOpenFileNameA(&dialogInfo) == FALSE) {
+        return false;
+    }
+
+    outPath = filePathBuffer.data();
+    return true;
+}
+
+bool Renderer::reloadModelFromPath(const std::string& path) {
+    if (device_ == VK_NULL_HANDLE || modelImportInProgress_) {
+        return false;
+    }
+
+    startAsyncModelImport(path);
+    return true;
+}
+
+void Renderer::startAsyncModelImport(const std::string& path) {
+    pendingMeshPath_ = path;
+    modelImportInProgress_ = true;
+    appendOutput(std::string("Importing model in background: ") + path);
+
+    pendingMeshLoadTask_ = std::async(std::launch::async, [path]() {
+        MeshInputData meshData;
+        loadObjMesh(path, meshData);
+        return meshData;
+    });
+}
+
+void Renderer::pollAsyncModelImport() {
+    if (!modelImportInProgress_) {
+        return;
+    }
+
+    if (!pendingMeshLoadTask_.valid()) {
+        modelImportInProgress_ = false;
+        appendOutput("Model import failed: invalid async task");
+        return;
+    }
+
+    if (pendingMeshLoadTask_.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
+        return;
+    }
+
+    MeshInputData meshData = pendingMeshLoadTask_.get();
+    modelImportInProgress_ = false;
+
+    if (meshData.vertices.empty() || meshData.indices.empty()) {
+        appendOutput(std::string("Model import failed: ") + pendingMeshPath_);
+        return;
+    }
+
+    std::vector<Vertex> newVertices;
+    newVertices.reserve(meshData.vertices.size());
+    for (const auto& vertexInput : meshData.vertices) {
+        newVertices.push_back(Vertex{vertexInput.position, vertexInput.normal, vertexInput.uv});
+    }
+
+    try {
+        vkDeviceWaitIdle(device_);
+
+        if (vertexBuffer_ != VK_NULL_HANDLE) {
+            vkDestroyBuffer(device_, vertexBuffer_, nullptr);
+            vertexBuffer_ = VK_NULL_HANDLE;
+        }
+        if (vertexBufferMemory_ != VK_NULL_HANDLE) {
+            vkFreeMemory(device_, vertexBufferMemory_, nullptr);
+            vertexBufferMemory_ = VK_NULL_HANDLE;
+        }
+
+        if (indexBuffer_ != VK_NULL_HANDLE) {
+            vkDestroyBuffer(device_, indexBuffer_, nullptr);
+            indexBuffer_ = VK_NULL_HANDLE;
+        }
+        if (indexBufferMemory_ != VK_NULL_HANDLE) {
+            vkFreeMemory(device_, indexBufferMemory_, nullptr);
+            indexBufferMemory_ = VK_NULL_HANDLE;
+        }
+
+        meshVertices_ = std::move(newVertices);
+        meshIndices_ = std::move(meshData.indices);
+        meshInputPath_ = pendingMeshPath_;
+        refreshSceneScaleParams();
+
+        createVertexBuffer();
+        createIndexBuffer();
+        appendOutput(std::string("Imported model: ") + meshInputPath_);
+    } catch (const std::exception& exception) {
+        appendOutput(std::string("Model import failed: ") + exception.what());
+    }
+}
+
+void Renderer::refreshSceneScaleParams() {
+    if (meshVertices_.empty()) {
+        sceneRadius_ = 1.0f;
+        return;
+    }
+
+    glm::vec3 minPosition = meshVertices_.front().position;
+    glm::vec3 maxPosition = meshVertices_.front().position;
+    for (const Vertex& vertex : meshVertices_) {
+        minPosition = glm::min(minPosition, vertex.position);
+        maxPosition = glm::max(maxPosition, vertex.position);
+    }
+
+    const glm::vec3 center = (minPosition + maxPosition) * 0.5f;
+    sceneRadius_ = 0.0f;
+    for (const Vertex& vertex : meshVertices_) {
+        sceneRadius_ = std::max(sceneRadius_, glm::distance(vertex.position, center));
+    }
+
+    if (sceneRadius_ < 1.0f) {
+        sceneRadius_ = 1.0f;
+    }
 }
 
 void Renderer::createVertexBuffer() {
-    loadMeshVertices();
+    if (meshVertices_.empty() || meshIndices_.empty()) {
+        loadMeshVertices();
+    }
 
     VkDeviceSize bufferSize = sizeof(Vertex) * meshVertices_.size();
     createBuffer(
@@ -954,12 +1087,25 @@ void Renderer::buildGui() {
     ImGui::SliderFloat3("Model Translate", &modelTranslation_.x, -5.0f, 5.0f);
     ImGui::SliderFloat("Yaw", &modelYawRadians_, -3.14f, 3.14f);
     ImGui::SliderFloat("Pitch", &modelPitchRadians_, -3.14f, 3.14f);
-    ImGui::SliderFloat("Camera Distance", &cameraDistance_, 1.0f, 20.0f);
+    const float cameraDistanceMax = std::max(20.0f, sceneRadius_ * 20.0f);
+    ImGui::SliderFloat("Camera Distance", &cameraDistance_, 1.0f, cameraDistanceMax);
+    if (ImGui::Button("Import Model (.obj)")) {
+        std::string selectedPath;
+        if (openModelFileDialog(selectedPath)) {
+            reloadModelFromPath(selectedPath);
+        } else {
+            appendOutput("Model import canceled");
+        }
+    }
+    if (modelImportInProgress_) {
+        ImGui::SameLine();
+        ImGui::TextUnformatted("Loading...");
+    }
     if (ImGui::Button("Reset")) {
         modelTranslation_ = glm::vec3(0.0f);
         modelYawRadians_ = 0.0f;
         modelPitchRadians_ = 0.0f;
-        cameraDistance_ = 3.5f;
+        cameraDistance_ = std::clamp(sceneRadius_ * 2.8f, 1.0f, cameraDistanceMax);
         appendOutput("Camera/model transform reset");
     }
     ImGui::Text("Frame time %.3f ms (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
@@ -1044,7 +1190,7 @@ void Renderer::updateUniformBuffer(std::uint32_t frameIndex, float timeSeconds) 
         glm::radians(45.0f),
         static_cast<float>(swapchainExtent_.width) / static_cast<float>(swapchainExtent_.height),
         0.1f,
-        10.0f
+        std::max(100.0f, sceneRadius_ * 50.0f)
     );
     ubo.projection[1][1] *= -1.0f;
 
@@ -1088,6 +1234,7 @@ void Renderer::drawFrame() {
     const auto now = std::chrono::high_resolution_clock::now();
     float timeSeconds = std::chrono::duration<float, std::chrono::seconds::period>(now - startTime).count();
 
+    pollAsyncModelImport();
     buildGui();
     updateUniformBuffer(currentFrame_, timeSeconds);
     recordCommandBuffer(commandBuffers_[currentFrame_], imageIndex);
@@ -1641,8 +1788,8 @@ LRESULT Renderer::handleWindowMessage(HWND hWnd, UINT message, WPARAM wParam, LP
         }
         const short wheelDelta = GET_WHEEL_DELTA_WPARAM(wParam);
         cameraDistance_ -= static_cast<float>(wheelDelta) / static_cast<float>(WHEEL_DELTA) * 0.2f;
-        cameraDistance_ = std::clamp(cameraDistance_, 1.0f, 20.0f);
-        appendOutput("Zoom updated");
+        cameraDistance_ = std::clamp(cameraDistance_, 1.0f, std::max(20.0f, sceneRadius_ * 20.0f));
+        // appendOutput("Zoom updated");
         return 0;
     }
     default:
