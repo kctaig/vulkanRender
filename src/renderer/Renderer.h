@@ -35,6 +35,13 @@ public:
         glm::mat4 projection = glm::mat4(1.0f);
     };
 
+    struct LightingPushConstants {
+        std::int32_t debugMode = 0;
+        std::int32_t lightCount = 8;
+        float lightIntensity = 2.0f;
+        float padding = 0.0f;
+    };
+
     bool initialize(unsigned int width, unsigned int height);
     void setMeshInputPath(std::string path);
     void mainLoop();
@@ -69,8 +76,11 @@ private:
     void createImageViews();
     void createRenderPass();
     void createDescriptorSetLayout();
+    void createLightingDescriptorSetLayout();
     void createGraphicsPipeline();
+    void createLightingPipeline();
     void createDepthResources();
+    void createGBufferResources();
     void createFramebuffers();
     void createCommandPool();
     void createVertexBuffer();
@@ -78,6 +88,9 @@ private:
     void createUniformBuffers();
     void createDescriptorPool();
     void createDescriptorSets();
+    void createLightingDescriptorPool();
+    void createLightingDescriptorSet();
+    void updateLightingDescriptorSet();
     void createImGuiDescriptorPool();
     void initImGui();
     void shutdownImGui();
@@ -159,13 +172,29 @@ private:
 
     VkRenderPass renderPass_ = VK_NULL_HANDLE;
     VkDescriptorSetLayout descriptorSetLayout_ = VK_NULL_HANDLE;
+    VkDescriptorSetLayout lightingDescriptorSetLayout_ = VK_NULL_HANDLE;
     VkPipelineLayout pipelineLayout_ = VK_NULL_HANDLE;
+    VkPipelineLayout lightingPipelineLayout_ = VK_NULL_HANDLE;
     VkPipeline graphicsPipeline_ = VK_NULL_HANDLE;
+    VkPipeline lightingPipeline_ = VK_NULL_HANDLE;
 
     VkImage depthImage_ = VK_NULL_HANDLE;
     VkDeviceMemory depthImageMemory_ = VK_NULL_HANDLE;
     VkImageView depthImageView_ = VK_NULL_HANDLE;
     VkFormat depthFormat_ = VK_FORMAT_UNDEFINED;
+
+    VkImage gbufferPositionImage_ = VK_NULL_HANDLE;
+    VkDeviceMemory gbufferPositionImageMemory_ = VK_NULL_HANDLE;
+    VkImageView gbufferPositionImageView_ = VK_NULL_HANDLE;
+    VkImage gbufferNormalImage_ = VK_NULL_HANDLE;
+    VkDeviceMemory gbufferNormalImageMemory_ = VK_NULL_HANDLE;
+    VkImageView gbufferNormalImageView_ = VK_NULL_HANDLE;
+    VkImage gbufferAlbedoImage_ = VK_NULL_HANDLE;
+    VkDeviceMemory gbufferAlbedoImageMemory_ = VK_NULL_HANDLE;
+    VkImageView gbufferAlbedoImageView_ = VK_NULL_HANDLE;
+    VkFormat gbufferPositionFormat_ = VK_FORMAT_R16G16B16A16_SFLOAT;
+    VkFormat gbufferNormalFormat_ = VK_FORMAT_R16G16B16A16_SFLOAT;
+    VkFormat gbufferAlbedoFormat_ = VK_FORMAT_R8G8B8A8_UNORM;
 
     VkCommandPool commandPool_ = VK_NULL_HANDLE;
     std::array<VkCommandBuffer, kMaxFramesInFlight> commandBuffers_{};
@@ -185,6 +214,8 @@ private:
     std::array<VkDeviceMemory, kMaxFramesInFlight> uniformBuffersMemory_{};
     VkDescriptorPool descriptorPool_ = VK_NULL_HANDLE;
     std::array<VkDescriptorSet, kMaxFramesInFlight> descriptorSets_{};
+    VkDescriptorPool lightingDescriptorPool_ = VK_NULL_HANDLE;
+    VkDescriptorSet lightingDescriptorSet_ = VK_NULL_HANDLE;
     VkDescriptorPool imguiDescriptorPool_ = VK_NULL_HANDLE;
 
     std::array<VkSemaphore, kMaxFramesInFlight> imageAvailableSemaphores_{};
@@ -198,6 +229,9 @@ private:
     float modelYawRadians_ = 0.0f;
     float modelPitchRadians_ = 0.0f;
     float cameraDistance_ = 3.5f;
+    std::int32_t lightingDebugMode_ = 0;
+    std::int32_t deferredLightCount_ = 8;
+    float deferredLightIntensity_ = 2.0f;
     std::vector<std::string> outputLines_;
     bool autoScrollOutput_ = true;
     unsigned int windowWidth_ = 1600;
