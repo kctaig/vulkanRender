@@ -633,6 +633,13 @@ void Renderer::createImageViews() {
 }
 
 void Renderer::createRenderPass() {
+    // ----------------------- 附件（Attachments）：图像资源 ---------------------
+    // 颜色（swapchain)
+    // 深度
+    // GBuffer Postiion
+    // Gbuffer Normal
+    // GBuffer ALbedo
+
     VkAttachmentDescription colorAttachment{};
     colorAttachment.format = swapchainImageFormat_;
     colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -641,6 +648,7 @@ void Renderer::createRenderPass() {
     colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    // 该 attachment 最终输出到屏幕
     colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
     depthFormat_ = findDepthFormat();
@@ -662,6 +670,7 @@ void Renderer::createRenderPass() {
     gbufferPositionAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     gbufferPositionAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     gbufferPositionAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    // 该 attachment 不会被 present ，是中间数据
     gbufferPositionAttachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
     VkAttachmentDescription gbufferNormalAttachment{};
@@ -684,6 +693,10 @@ void Renderer::createRenderPass() {
     gbufferAlbedoAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     gbufferAlbedoAttachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
+    // ------------------------- Subpass --------------------------------
+    // 使用避免 GBuffer 写回显存
+    // 使用 Input Attachment（不是 sampler），更快
+
     std::array<VkAttachmentReference, 3> geometryColorAttachmentReferences{};
     geometryColorAttachmentReferences[0] = {2, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
     geometryColorAttachmentReferences[1] = {3, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
@@ -693,10 +706,14 @@ void Renderer::createRenderPass() {
     depthAttachmentReference.attachment = 1;
     depthAttachmentReference.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
+    // Geometry pass（写 GBuffer）
     VkSubpassDescription geometrySubpass{};
+    // 输入：顶点数据
     geometrySubpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    // 同时写三个 target (MRT)
     geometrySubpass.colorAttachmentCount = static_cast<std::uint32_t>(geometryColorAttachmentReferences.size());
     geometrySubpass.pColorAttachments = geometryColorAttachmentReferences.data();
+    // 开启深度测试
     geometrySubpass.pDepthStencilAttachment = &depthAttachmentReference;
 
     VkAttachmentReference lightingColorAttachmentReference{};
@@ -708,10 +725,12 @@ void Renderer::createRenderPass() {
     lightingInputAttachmentReferences[1] = {3, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     lightingInputAttachmentReferences[2] = {4, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
 
+    // Lighting （读 GBuffer -> 写 Framebuffer）
     VkSubpassDescription lightingSubpass{};
     lightingSubpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     lightingSubpass.colorAttachmentCount = 1;
     lightingSubpass.pColorAttachments = &lightingColorAttachmentReference;
+    // 输入：GBuffer，inputAttachement 是 tiled-based 优化，不写回显存，直接在 tile cache 读 GBuffer
     lightingSubpass.inputAttachmentCount = static_cast<std::uint32_t>(lightingInputAttachmentReferences.size());
     lightingSubpass.pInputAttachments = lightingInputAttachmentReferences.data();
 
@@ -724,6 +743,11 @@ void Renderer::createRenderPass() {
     uiSubpass.colorAttachmentCount = 1;
     uiSubpass.pColorAttachments = &uiColorAttachmentReference;
 
+    // --------------------------- dependency -------------------------------
+    // 上一帧 / 外部 -> Geomettry Buffer
+    // 读 Geometry Buffer -> Liginting 写
+    // Lighting 写完 -> UI 覆盖显示
+
     VkSubpassDependency dependencyExternalToGeometry{};
     dependencyExternalToGeometry.srcSubpass = VK_SUBPASS_EXTERNAL;
     dependencyExternalToGeometry.dstSubpass = 0;
@@ -731,13 +755,13 @@ void Renderer::createRenderPass() {
     dependencyExternalToGeometry.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
     dependencyExternalToGeometry.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 
-    VkSubpassDependency dependencyGeometryToUi{};
-    dependencyGeometryToUi.srcSubpass = 0;
-    dependencyGeometryToUi.dstSubpass = 1;
-    dependencyGeometryToUi.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
-    dependencyGeometryToUi.dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependencyGeometryToUi.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-    dependencyGeometryToUi.dstAccessMask = VK_ACCESS_INPUT_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    VkSubpassDependency dependencyGeometryToLighting{};
+    dependencyGeometryToLighting.srcSubpass = 0;
+    dependencyGeometryToLighting.dstSubpass = 1;
+    dependencyGeometryToLighting.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+    dependencyGeometryToLighting.dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependencyGeometryToLighting.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    dependencyGeometryToLighting.dstAccessMask = VK_ACCESS_INPUT_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
     VkSubpassDependency dependencyLightingToUi{};
     dependencyLightingToUi.srcSubpass = 1;
@@ -746,6 +770,8 @@ void Renderer::createRenderPass() {
     dependencyLightingToUi.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     dependencyLightingToUi.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
     dependencyLightingToUi.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+    // ---------------------- RenderPass ---------------------------
 
     std::array<VkAttachmentDescription, 5> attachments = {
         colorAttachment,
@@ -761,7 +787,7 @@ void Renderer::createRenderPass() {
     std::array<VkSubpassDescription, 3> subpasses = {geometrySubpass, lightingSubpass, uiSubpass};
     std::array<VkSubpassDependency, 3> dependencies = {
         dependencyExternalToGeometry,
-        dependencyGeometryToUi,
+        dependencyGeometryToLighting,
         dependencyLightingToUi,
     };
     renderPassCreateInfo.subpassCount = static_cast<std::uint32_t>(subpasses.size());
@@ -775,26 +801,46 @@ void Renderer::createRenderPass() {
 }
 
 void Renderer::createDescriptorSetLayout() {
+    // --- 定义描述符集布局绑定信息 ---
+
+    // 描述描述符集中的一个条目（Binding）
     VkDescriptorSetLayoutBinding uboLayoutBinding{};
+
+    // 绑定点索引：对应着色器中的 layout(binding = 0)
     uboLayoutBinding.binding = 0;
+
+    // 描述符类型：统一缓冲区，用于向着色器传递常量数据（如变换矩阵）
     uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+
+    // 描述符数量：如果这是数组则为数组大小，单个UBO则为1
     uboLayoutBinding.descriptorCount = 1;
+
+    // 着色器阶段可见性掩码：指定该UBO只能在顶点着色器阶段访问
     uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
+    // pImmutableSamplers：用于纹理采样器，此处为UBO，设为nullptr即可
+    // uboLayoutBinding.pImmutableSamplers = nullptr; 
+
+    // --- 创建描述符集布局 ---
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = 1;
-    layoutInfo.pBindings = &uboLayoutBinding;
 
+    // 绑定数量：该描述符集布局中包含的绑定点的数量
+    layoutInfo.bindingCount = 1;
+
+    // 指向绑定信息数组的指针
+    layoutInfo.pBindings = &uboLayoutBinding;
     if (vkCreateDescriptorSetLayout(device_, &layoutInfo, nullptr, &descriptorSetLayout_) != VK_SUCCESS) {
         throw std::runtime_error("vkCreateDescriptorSetLayout failed");
     }
 }
 
 void Renderer::createLightingDescriptorSetLayout() {
+    // lighting 需要从 GBuffer 中读取三个数据，因此这里有三个绑定点
     std::array<VkDescriptorSetLayoutBinding, 3> bindings{};
     for (std::uint32_t i = 0; i < static_cast<std::uint32_t>(bindings.size()); ++i) {
         bindings[i].binding = i;
+        // 读取输入附件，例如gbuffer或者上一pass的深度/颜色缓冲
         bindings[i].descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
         bindings[i].descriptorCount = 1;
         bindings[i].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
@@ -811,84 +857,110 @@ void Renderer::createLightingDescriptorSetLayout() {
 }
 
 void Renderer::createGraphicsPipeline() {
+    // 定义着色器文件的根目录（通常由构建系统传入宏定义）
     const std::string shaderRoot = VR_SHADER_DIR;
+    
+    // 读取编译好的SPIR-V二进制文件（顶点着色器和片段着色器）
     std::vector<char> vertShaderCode = readBinaryFile((shaderRoot + "/triangle.vert.spv").c_str());
     std::vector<char> fragShaderCode = readBinaryFile((shaderRoot + "/triangle.frag.spv").c_str());
 
+    // 将读取的二进制代码封装为Vulkan着色器模块对象
     VkShaderModule vertShaderModule = createShaderModule(vertShaderCode);
     VkShaderModule fragShaderModule = createShaderModule(fragShaderCode);
 
+    // --- 配置顶点着色器阶段 ---
     VkPipelineShaderStageCreateInfo vertShaderStageCreateInfo{};
     vertShaderStageCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    vertShaderStageCreateInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
-    vertShaderStageCreateInfo.module = vertShaderModule;
-    vertShaderStageCreateInfo.pName = "main";
+    vertShaderStageCreateInfo.stage = VK_SHADER_STAGE_VERTEX_BIT; // 指定为顶点着色阶段
+    vertShaderStageCreateInfo.module = vertShaderModule;          // 绑定着色器模块
+    vertShaderStageCreateInfo.pName = "main";                     // 指定入口函数名称
 
+    // --- 配置片段着色器阶段 ---
     VkPipelineShaderStageCreateInfo fragShaderStageCreateInfo{};
     fragShaderStageCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    fragShaderStageCreateInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    fragShaderStageCreateInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT; // 指定为片段着色阶段
     fragShaderStageCreateInfo.module = fragShaderModule;
     fragShaderStageCreateInfo.pName = "main";
 
+    // 将两个着色器阶段信息存入数组，传递给管线创建信息
     VkPipelineShaderStageCreateInfo shaderStages[] = {
         vertShaderStageCreateInfo,
         fragShaderStageCreateInfo,
     };
 
+    // --- 配置顶点输入状态 ---
+    // 描述顶点数据的绑定方式和属性格式（位置、颜色、法线等）
     VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
     vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    VkVertexInputBindingDescription bindingDescription = Vertex::getBindingDescription();
-    std::array<VkVertexInputAttributeDescription, 3> attributes = Vertex::getAttributeDescriptions();
+    VkVertexInputBindingDescription bindingDescription = Vertex::getBindingDescription(); // 获取绑定描述（跨度、输入速率等）
+    std::array<VkVertexInputAttributeDescription, 3> attributes = Vertex::getAttributeDescriptions(); // 获取属性描述（偏移量、格式等）
     vertexInputInfo.vertexBindingDescriptionCount = 1;
     vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
     vertexInputInfo.vertexAttributeDescriptionCount = static_cast<std::uint32_t>(attributes.size());
     vertexInputInfo.pVertexAttributeDescriptions = attributes.data();
 
+    // --- 配置输入装配状态 ---
+    // 描述如何解释顶点数据以构成图元
     VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
     inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST; // 设置图元拓扑类型为三角形列表
+    // inputAssembly.primitiveRestartEnable = VK_FALSE; // 注意：通常需要设置此项，默认初始化可能为0/False
 
+    // --- 配置视口状态 ---
+    // 注意：这里只设置了数量，具体的视口和裁剪矩形将在绘制时通过动态状态设置
     VkPipelineViewportStateCreateInfo viewportState{};
     viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
     viewportState.viewportCount = 1;
     viewportState.scissorCount = 1;
 
+    // --- 配置光栅化状态 ---
     VkPipelineRasterizationStateCreateInfo rasterizer{};
     rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
-    rasterizer.lineWidth = 1.0f;
-    rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
-    rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;       // 多边形填充模式：实心填充
+    rasterizer.lineWidth = 1.0f;                         // 线宽
+    rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;         // 背面剔除
+    rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE; // 设定逆时针方向为正面
 
+    // --- 配置多重采样状态 ---
+    // 这里关闭了多重采样抗锯齿（MSAA）
     VkPipelineMultisampleStateCreateInfo multisampling{};
     multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT; // 单采样点
 
+    // --- 配置深度/模板测试状态 ---
     VkPipelineDepthStencilStateCreateInfo depthStencil{};
     depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-    depthStencil.depthTestEnable = VK_TRUE;
-    depthStencil.depthWriteEnable = VK_TRUE;
-    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
-    depthStencil.depthBoundsTestEnable = VK_FALSE;
-    depthStencil.stencilTestEnable = VK_FALSE;
+    depthStencil.depthTestEnable = VK_TRUE;              // 开启深度测试
+    depthStencil.depthWriteEnable = VK_TRUE;             // 开启深度写入
+    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;    // 深度比较操作：更近的物体通过测试
+    depthStencil.depthBoundsTestEnable = VK_FALSE;       // 关闭深度边界测试
+    depthStencil.stencilTestEnable = VK_FALSE;           // 关闭模板测试
 
+    // --- 配置颜色混合状态 ---
+    // 定义单个颜色附件的混合方式
     VkPipelineColorBlendAttachmentState colorBlendAttachment{};
     colorBlendAttachment.colorWriteMask =
         VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    // 此处通常还有 blendEnable 等设置，默认为关闭混合（直接覆盖）
+    
+    // 针对多渲染目标（MRT），这里假设有3个颜色附件，使用相同的混合设置
     std::array<VkPipelineColorBlendAttachmentState, 3> colorBlendAttachments = {
         colorBlendAttachment,
         colorBlendAttachment,
         colorBlendAttachment,
     };
 
+    // 全局颜色混合状态
     VkPipelineColorBlendStateCreateInfo colorBlending{};
     colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
     colorBlending.attachmentCount = static_cast<std::uint32_t>(colorBlendAttachments.size());
     colorBlending.pAttachments = colorBlendAttachments.data();
 
+    // --- 配置动态状态 ---
+    // 允许在绘图命令中动态设置的部分管线状态，无需重建管线
     std::array<VkDynamicState, 2> dynamicStates = {
-        VK_DYNAMIC_STATE_VIEWPORT,
-        VK_DYNAMIC_STATE_SCISSOR,
+        VK_DYNAMIC_STATE_VIEWPORT, // 动态视口
+        VK_DYNAMIC_STATE_SCISSOR,  // 动态裁剪矩形
     };
 
     VkPipelineDynamicStateCreateInfo dynamicState{};
@@ -896,35 +968,41 @@ void Renderer::createGraphicsPipeline() {
     dynamicState.dynamicStateCount = static_cast<std::uint32_t>(dynamicStates.size());
     dynamicState.pDynamicStates = dynamicStates.data();
 
+    // --- 创建管线布局 ---
+    // 定义了着色器访问的资源（如Uniform Buffer, Sampler等）的布局
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = 1;
+    pipelineLayoutInfo.setLayoutCount = 1;                         // 绑定一个描述符集布局
     pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout_;
 
     if (vkCreatePipelineLayout(device_, &pipelineLayoutInfo, nullptr, &pipelineLayout_) != VK_SUCCESS) {
         throw std::runtime_error("vkCreatePipelineLayout failed");
     }
 
+    // --- 创建图形管线 ---
     VkGraphicsPipelineCreateInfo pipelineInfo{};
     pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    pipelineInfo.stageCount = 2;
-    pipelineInfo.pStages = shaderStages;
-    pipelineInfo.pVertexInputState = &vertexInputInfo;
-    pipelineInfo.pInputAssemblyState = &inputAssembly;
-    pipelineInfo.pViewportState = &viewportState;
-    pipelineInfo.pRasterizationState = &rasterizer;
-    pipelineInfo.pMultisampleState = &multisampling;
-    pipelineInfo.pDepthStencilState = &depthStencil;
-    pipelineInfo.pColorBlendState = &colorBlending;
-    pipelineInfo.pDynamicState = &dynamicState;
-    pipelineInfo.layout = pipelineLayout_;
-    pipelineInfo.renderPass = renderPass_;
-    pipelineInfo.subpass = 0;
+    pipelineInfo.stageCount = 2;                       // 着色器阶段数量
+    pipelineInfo.pStages = shaderStages;               // 着色器阶段信息
+    pipelineInfo.pVertexInputState = &vertexInputInfo; // 顶点输入
+    pipelineInfo.pInputAssemblyState = &inputAssembly; // 输入装配
+    pipelineInfo.pViewportState = &viewportState;      // 视口状态
+    pipelineInfo.pRasterizationState = &rasterizer;    // 光栅化
+    pipelineInfo.pMultisampleState = &multisampling;   // 多重采样
+    pipelineInfo.pDepthStencilState = &depthStencil;   // 深度模板
+    pipelineInfo.pColorBlendState = &colorBlending;    // 颜色混合
+    pipelineInfo.pDynamicState = &dynamicState;        // 动态状态
+    pipelineInfo.layout = pipelineLayout_;             // 管线布局
+    pipelineInfo.renderPass = renderPass_;             // 兼容的渲染通道
+    pipelineInfo.subpass = 0;                          // 使用的子通道索引
 
+    // 调用API创建管线
     if (vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &graphicsPipeline_) != VK_SUCCESS) {
         throw std::runtime_error("vkCreateGraphicsPipelines failed");
     }
 
+    // 清理临时的着色器模块
+    // 管线创建完成后，着色器模块不再需要，可以销毁以释放内存
     vkDestroyShaderModule(device_, fragShaderModule, nullptr);
     vkDestroyShaderModule(device_, vertShaderModule, nullptr);
 }
@@ -1002,10 +1080,15 @@ void Renderer::createLightingPipeline() {
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pipelineLayoutInfo.setLayoutCount = 1;
     pipelineLayoutInfo.pSetLayouts = &lightingDescriptorSetLayout_;
+
+    // --- 配置推送常量范围 ---
+    // 推送常量是一种快速向着色器传递少量数据的方式（通常用于更新频率高的数据）
     VkPushConstantRange debugModePushConstantRange{};
+    // 指定该推送常量在片元着色器中可见
     debugModePushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     debugModePushConstantRange.offset = 0;
     debugModePushConstantRange.size = sizeof(LightingPushConstants);
+
     pipelineLayoutInfo.pushConstantRangeCount = 1;
     pipelineLayoutInfo.pPushConstantRanges = &debugModePushConstantRange;
 
@@ -1097,9 +1180,16 @@ void Renderer::createGBufferResources() {
 }
 
 void Renderer::createFramebuffers() {
+    // FrameBuffer, 渲染管线进行渲染的具体目标，
+    // 绑定一组 VkImageView，它们作为 Color，Depth/Stencil等附件，供RenderPass使用
+
+    // FrameBuffer 中的图像会写到 swapchain中，再呈现到屏幕上
+    // 为了实现多缓冲，因此有多个 swapchain，同时也有对应的 FrameBuffer
+    // 每次渲染时会获取到一个 swapchain 索引，从而能够访问到对应的 FrameBuffer
     swapchainFramebuffers_.resize(swapchainImageViews_.size());
 
     for (std::size_t i = 0; i < swapchainImageViews_.size(); ++i) {
+        // renderpass 中的 attachment 是一种抽象的描述，与 FrameBuffer 中具体的 VkImageView 一一对应起来
         std::array<VkImageView, 5> attachments = {
             swapchainImageViews_[i],
             depthImageView_,
@@ -1110,7 +1200,7 @@ void Renderer::createFramebuffers() {
 
         VkFramebufferCreateInfo framebufferCreateInfo{};
         framebufferCreateInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        framebufferCreateInfo.renderPass = renderPass_;
+        framebufferCreateInfo.renderPass = renderPass_; // 指定使用改 FrameBuffer 的的 renderpass
         framebufferCreateInfo.attachmentCount = static_cast<std::uint32_t>(attachments.size());
         framebufferCreateInfo.pAttachments = attachments.data();
         framebufferCreateInfo.width = swapchainExtent_.width;
@@ -2155,7 +2245,7 @@ void Renderer::createImage(
     imageInfo.extent.width = width;
     imageInfo.extent.height = height;
     imageInfo.extent.depth = 1;
-    imageInfo.mipLevels = 1;
+    imageInfo.mipLevels = 1; // 当前不支持 mipmap
     imageInfo.arrayLayers = 1;
     imageInfo.format = format;
     imageInfo.tiling = tiling;
