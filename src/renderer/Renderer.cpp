@@ -945,7 +945,7 @@ void Renderer::buildGui() {
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
 
-    ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport());
+    ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
 
     ImGui::Begin("Stage 1.5 Controls");
     ImGui::Text("Right Drag: Rotate");
@@ -1571,10 +1571,12 @@ LRESULT CALLBACK Renderer::WindowProc(HWND hWnd, UINT message, WPARAM wParam, LP
 }
 
 LRESULT Renderer::handleWindowMessage(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
+    bool uiCapturingMouse = false;
     if (ImGui::GetCurrentContext() != nullptr) {
         if (::ImGui_ImplWin32_WndProcHandler(hWnd, message, wParam, lParam) != 0) {
             return 1;
         }
+        uiCapturingMouse = ImGui::GetIO().WantCaptureMouse;
     }
 
     switch (message) {
@@ -1590,6 +1592,10 @@ LRESULT Renderer::handleWindowMessage(HWND hWnd, UINT message, WPARAM wParam, LP
         }
         return 0;
     case WM_RBUTTONDOWN:
+        if (uiCapturingMouse) {
+            rightDragActive_ = false;
+            return 0;
+        }
         rightDragActive_ = true;
         lastMousePosition_ = {GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
         return 0;
@@ -1597,6 +1603,10 @@ LRESULT Renderer::handleWindowMessage(HWND hWnd, UINT message, WPARAM wParam, LP
         rightDragActive_ = false;
         return 0;
     case WM_LBUTTONDOWN:
+        if (uiCapturingMouse) {
+            leftDragActive_ = false;
+            return 0;
+        }
         leftDragActive_ = true;
         lastMousePosition_ = {GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
         return 0;
@@ -1609,6 +1619,12 @@ LRESULT Renderer::handleWindowMessage(HWND hWnd, UINT message, WPARAM wParam, LP
         const float deltaY = static_cast<float>(currentPoint.y - lastMousePosition_.y);
         lastMousePosition_ = currentPoint;
 
+        if (uiCapturingMouse) {
+            rightDragActive_ = false;
+            leftDragActive_ = false;
+            return 0;
+        }
+
         if (rightDragActive_) {
             modelYawRadians_ += deltaX * 0.01f;
             modelPitchRadians_ += deltaY * 0.01f;
@@ -1620,6 +1636,9 @@ LRESULT Renderer::handleWindowMessage(HWND hWnd, UINT message, WPARAM wParam, LP
         return 0;
     }
     case WM_MOUSEWHEEL: {
+        if (uiCapturingMouse) {
+            return 0;
+        }
         const short wheelDelta = GET_WHEEL_DELTA_WPARAM(wParam);
         cameraDistance_ -= static_cast<float>(wheelDelta) / static_cast<float>(WHEEL_DELTA) * 0.2f;
         cameraDistance_ = std::clamp(cameraDistance_, 1.0f, 20.0f);
