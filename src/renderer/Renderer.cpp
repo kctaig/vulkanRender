@@ -58,6 +58,49 @@ constexpr std::array<const char*, 1> kValidationLayers = {
     "VK_LAYER_KHRONOS_validation",
 };
 
+bool isInstanceExtensionSupported(const char* extensionName) {
+    std::uint32_t extensionCount = 0;
+    vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr);
+    std::vector<VkExtensionProperties> availableExtensions(extensionCount);
+    vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, availableExtensions.data());
+
+    for (const VkExtensionProperties& extension : availableExtensions) {
+        if (std::strcmp(extension.extensionName, extensionName) == 0) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo) {
+    createInfo = {};
+    createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+    createInfo.messageSeverity =
+        VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+        VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+    createInfo.messageType =
+        VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+        VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+        VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+    createInfo.pfnUserCallback = [](VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
+                                    VkDebugUtilsMessageTypeFlagsEXT,
+                                    const VkDebugUtilsMessengerCallbackDataEXT* callbackData,
+                                    void*) -> VkBool32 {
+        const char* severity = "INFO";
+        if ((messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) != 0U) {
+            severity = "ERROR";
+        } else if ((messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) != 0U) {
+            severity = "WARN";
+        }
+
+        if (callbackData != nullptr && callbackData->pMessage != nullptr) {
+            std::cerr << "[Vulkan Validation][" << severity << "] " << callbackData->pMessage << "\n";
+        }
+        return VK_FALSE;
+    };
+}
+
 bool areValidationLayersSupported() {
     std::uint32_t layerCount = 0;
     vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
@@ -262,6 +305,8 @@ void Renderer::shutdown() {
         surface_ = VK_NULL_HANDLE;
     }
 
+    destroyDebugMessenger();
+
     if (instance_ != VK_NULL_HANDLE) {
         vkDestroyInstance(instance_, nullptr);
         instance_ = VK_NULL_HANDLE;
@@ -338,6 +383,7 @@ bool Renderer::processWindowMessages() {
 bool Renderer::initVulkan() {
     try {
         createInstance();
+        setupDebugMessenger();
         createSurface();
         pickPhysicalDevice();
         createLogicalDevice();
@@ -381,20 +427,79 @@ void Renderer::createInstance() {
     applicationInfo.engineVersion = VK_MAKE_VERSION(0, 1, 0);
     applicationInfo.apiVersion = VK_API_VERSION_1_2;
 
+    std::vector<const char*> enabledInstanceExtensions(kInstanceExtensions.begin(), kInstanceExtensions.end());
+    const bool shouldEnableValidation = kEnableValidationLayers && areValidationLayersSupported();
+    const bool supportsDebugUtils = isInstanceExtensionSupported(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+    if (shouldEnableValidation && supportsDebugUtils) {
+        enabledInstanceExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+    }
+
+    VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo{};
+    if (shouldEnableValidation && supportsDebugUtils) {
+        populateDebugMessengerCreateInfo(debugCreateInfo);
+    }
+
     VkInstanceCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     createInfo.pApplicationInfo = &applicationInfo;
-    createInfo.enabledExtensionCount = static_cast<std::uint32_t>(kInstanceExtensions.size());
-    createInfo.ppEnabledExtensionNames = kInstanceExtensions.data();
+    createInfo.enabledExtensionCount = static_cast<std::uint32_t>(enabledInstanceExtensions.size());
+    createInfo.ppEnabledExtensionNames = enabledInstanceExtensions.data();
 
-    if (kEnableValidationLayers && areValidationLayersSupported()) {
+    if (shouldEnableValidation) {
         createInfo.enabledLayerCount = static_cast<std::uint32_t>(kValidationLayers.size());
         createInfo.ppEnabledLayerNames = kValidationLayers.data();
+        if (supportsDebugUtils) {
+            createInfo.pNext = &debugCreateInfo;
+        }
     }
 
     if (vkCreateInstance(&createInfo, nullptr, &instance_) != VK_SUCCESS) {
         throw std::runtime_error("vkCreateInstance failed");
     }
+
+    if (shouldEnableValidation && !supportsDebugUtils) {
+        std::cerr << "[Renderer] VK_EXT_debug_utils not available, validation callback disabled\n";
+    }
+}
+
+void Renderer::setupDebugMessenger() {
+    if (!kEnableValidationLayers || !areValidationLayersSupported()) {
+        return;
+    }
+
+    if (!isInstanceExtensionSupported(VK_EXT_DEBUG_UTILS_EXTENSION_NAME)) {
+        return;
+    }
+
+    VkDebugUtilsMessengerCreateInfoEXT createInfo{};
+    populateDebugMessengerCreateInfo(createInfo);
+
+    auto createDebugUtilsMessenger = reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT>(
+        vkGetInstanceProcAddr(instance_, "vkCreateDebugUtilsMessengerEXT")
+    );
+    if (createDebugUtilsMessenger == nullptr) {
+        throw std::runtime_error("vkCreateDebugUtilsMessengerEXT not found");
+    }
+
+    if (createDebugUtilsMessenger(instance_, &createInfo, nullptr, &debugMessenger_) != VK_SUCCESS) {
+        throw std::runtime_error("vkCreateDebugUtilsMessengerEXT failed");
+    }
+
+    std::cerr << "[Renderer] Vulkan validation enabled (debug messenger active)\n";
+}
+
+void Renderer::destroyDebugMessenger() {
+    if (debugMessenger_ == VK_NULL_HANDLE || instance_ == VK_NULL_HANDLE) {
+        return;
+    }
+
+    auto destroyDebugUtilsMessenger = reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(
+        vkGetInstanceProcAddr(instance_, "vkDestroyDebugUtilsMessengerEXT")
+    );
+    if (destroyDebugUtilsMessenger != nullptr) {
+        destroyDebugUtilsMessenger(instance_, debugMessenger_, nullptr);
+    }
+    debugMessenger_ = VK_NULL_HANDLE;
 }
 
 void Renderer::createSurface() {
