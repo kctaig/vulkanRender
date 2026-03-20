@@ -80,6 +80,8 @@ file(MAKE_DIRECTORY ${VR_SHADER_BINARY_DIR})
 set(VR_SHADER_SOURCES
     ${VR_SHADER_SOURCE_DIR}/triangle.vert
     ${VR_SHADER_SOURCE_DIR}/triangle.frag
+    ${VR_SHADER_SOURCE_DIR}/deferred_lighting.vert
+    ${VR_SHADER_SOURCE_DIR}/deferred_lighting.frag
 )
 
 set(VR_SHADER_OUTPUTS)
