@@ -69,6 +69,8 @@ private:
     bool initVulkan();
     bool processWindowMessages();
     void createInstance();
+    void setupDebugMessenger();
+    void destroyDebugMessenger();
     void createSurface();
     void pickPhysicalDevice();
     void createLogicalDevice();
@@ -156,6 +158,7 @@ private:
     POINT lastMousePosition_{0, 0};
 
     VkInstance instance_ = VK_NULL_HANDLE;
+    VkDebugUtilsMessengerEXT debugMessenger_ = VK_NULL_HANDLE;
     VkSurfaceKHR surface_ = VK_NULL_HANDLE;
     VkPhysicalDevice physicalDevice_ = VK_NULL_HANDLE;
     VkDevice device_ = VK_NULL_HANDLE;
