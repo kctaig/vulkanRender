@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <future>
 #include <string>
 #include <vector>
 
@@ -12,6 +13,8 @@
 #include <vulkan/vulkan.h>
 
 #include <glm/glm.hpp>
+
+#include "scene/MeshIO.h"
 
 namespace vr {
 
@@ -88,6 +91,11 @@ private:
     void recreateSwapchain();
     void cleanupSwapchain();
     void loadMeshVertices();
+    bool openModelFileDialog(std::string& outPath) const;
+    bool reloadModelFromPath(const std::string& path);
+    void startAsyncModelImport(const std::string& path);
+    void pollAsyncModelImport();
+    void refreshSceneScaleParams();
 
     [[nodiscard]] QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device) const;
     [[nodiscard]] SwapchainSupportDetails querySwapchainSupport(VkPhysicalDevice device) const;
@@ -168,6 +176,10 @@ private:
     VkDeviceMemory indexBufferMemory_ = VK_NULL_HANDLE;
     std::vector<Vertex> meshVertices_;
     std::vector<std::uint32_t> meshIndices_;
+    std::future<MeshInputData> pendingMeshLoadTask_;
+    bool modelImportInProgress_ = false;
+    std::string pendingMeshPath_;
+    float sceneRadius_ = 1.0f;
 
     std::array<VkBuffer, kMaxFramesInFlight> uniformBuffers_{};
     std::array<VkDeviceMemory, kMaxFramesInFlight> uniformBuffersMemory_{};
