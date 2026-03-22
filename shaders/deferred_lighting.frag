@@ -13,6 +13,10 @@ layout(push_constant) uniform DebugPushConstants {
     float roughness;
     float ao;
     float cameraDistance;
+    float materialTextureWeight;
+    float iblIntensity;
+    float padding0;
+    float padding1;
 } debugPush;
 
 layout(location = 0) out vec4 outColor;
@@ -70,12 +74,39 @@ vec3 getLightColor(int index) {
     return mix(vec3(0.35), palette, 0.85);
 }
 
+vec3 sampleIrradiance(vec3 normal) {
+    vec3 skyColor = vec3(0.25, 0.34, 0.45);
+    vec3 groundColor = vec3(0.08, 0.07, 0.06);
+    float factor = clamp(normal.y * 0.5 + 0.5, 0.0, 1.0);
+    return mix(groundColor, skyColor, factor);
+}
+
+vec3 samplePrefilter(vec3 reflectionDir, float roughness) {
+    vec3 horizon = vec3(0.24, 0.3, 0.38);
+    vec3 zenith = vec3(0.45, 0.52, 0.62);
+    float sky = clamp(reflectionDir.y * 0.5 + 0.5, 0.0, 1.0);
+    vec3 prefiltered = mix(horizon, zenith, sky);
+    return mix(prefiltered, vec3(dot(prefiltered, vec3(0.3333))), roughness * roughness);
+}
+
+vec2 sampleBrdfLut(float nDotV, float roughness) {
+    float a = roughness * roughness;
+    float k = a * 0.5;
+    float denom = max(nDotV * (1.0 - k) + k, 1e-5);
+    float visibility = nDotV / denom;
+    float bias = clamp((1.0 - roughness) * 0.08, 0.0, 0.08);
+    return vec2(visibility, bias);
+}
+
 void main() {
     vec3 worldPos = subpassLoad(gPosition).xyz;
+    float metallicFromMap = clamp(subpassLoad(gPosition).w, 0.0, 1.0);
     vec3 rawNormal = subpassLoad(gNormal).xyz;
+    float roughnessFromMap = clamp(subpassLoad(gNormal).w, 0.04, 1.0);
     float rawNormalLength = length(rawNormal);
     vec3 normal = rawNormalLength > 1e-6 ? rawNormal / rawNormalLength : vec3(0.0, 1.0, 0.0);
     vec3 albedo = subpassLoad(gAlbedo).xyz;
+    float aoFromMap = clamp(subpassLoad(gAlbedo).w, 0.0, 1.0);
 
     if (debugPush.mode == 1) {
         if (rawNormalLength <= 1e-6) {
@@ -99,9 +130,10 @@ void main() {
         return;
     }
 
-    float metallic = clamp(debugPush.metallic, 0.0, 1.0);
-    float roughness = clamp(debugPush.roughness, 0.04, 1.0);
-    float ao = clamp(debugPush.ao, 0.0, 1.0);
+    float mapWeight = clamp(debugPush.materialTextureWeight, 0.0, 1.0);
+    float metallic = mix(clamp(debugPush.metallic, 0.0, 1.0), metallicFromMap, mapWeight);
+    float roughness = mix(clamp(debugPush.roughness, 0.04, 1.0), roughnessFromMap, mapWeight);
+    float ao = mix(clamp(debugPush.ao, 0.0, 1.0), aoFromMap, mapWeight);
 
     vec3 viewPos = vec3(0.0, 0.0, debugPush.cameraDistance);
     vec3 V = normalize(viewPos - worldPos);
@@ -140,7 +172,22 @@ void main() {
         Lo += (kD * albedo / PI + specular) * radiance * NdotL;
     }
 
-    vec3 ambient = vec3(0.03) * albedo * ao;
+    vec3 N = normal;
+    vec3 R = reflect(-V, N);
+    float NdotV = max(dot(N, V), 0.0);
+
+    vec3 F = fresnelSchlick(NdotV, F0);
+    vec3 kS = F;
+    vec3 kD = (vec3(1.0) - kS) * (1.0 - metallic);
+
+    vec3 irradiance = sampleIrradiance(N);
+    vec3 diffuseIbl = irradiance * albedo;
+
+    vec3 prefiltered = samplePrefilter(R, roughness);
+    vec2 brdf = sampleBrdfLut(NdotV, roughness);
+    vec3 specularIbl = prefiltered * (F * brdf.x + brdf.y);
+
+    vec3 ambient = (kD * diffuseIbl + specularIbl) * ao * max(debugPush.iblIntensity, 0.0);
     vec3 color = ambient + Lo;
 
     color = color / (color + vec3(1.0));

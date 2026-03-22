@@ -101,6 +101,59 @@ shader 会按索引将光源分布在场景周围环带上（见 `shaders/deferr
 - ✅ 阶段 1：基础 Vulkan 渲染链路
 - ✅ 阶段 1.5：Win32 + ImGui 调试层 + 交互控制 + Docking + Output
 - ✅ 阶段 2：真实 GBuffer attachments + deferred lighting + 多光源 + 调试视图
-- 🔄 阶段 3：Cook-Torrance 参数纹理与 IBL（已开始：Cook-Torrance 常量材质参数）
+- ✅ 阶段 3：Cook-Torrance 参数纹理与 IBL（已完成）
 - ⏳ 阶段 4：PCF/PCSS shadow map 与滤波
 - ⏳ 阶段 5：Tone Mapping / TAA / Bloom
+
+## Frame Graph 设计思路（适配当前项目，可扩展）
+
+目标：将当前 `deferred + Scene 离屏 + ImGui` 的渲染流程，升级为声明式、可编译、可裁剪的帧图系统，降低手写同步与资源管理复杂度。
+
+### 1) 核心抽象
+
+- `FrameGraph`：每帧构建 DAG（只声明 pass 与资源关系，不直接持有业务逻辑）
+- `PassNode`：`setup(builder)` 声明读写依赖；`execute(context)` 录制 Vulkan 命令
+- `ResourceHandle`：逻辑资源句柄（如 `SceneColor`、`GBufferNormal`），与真实 `VkImage/VkBuffer` 解耦
+- `Blackboard`：跨 pass 数据交换（相机、光源参数、调试模式、Scene 视口信息）
+
+### 2) 编译阶段（FrameGraph::compile）
+
+- 依赖分析与拓扑排序：根据资源读写自动排序 pass，检测循环依赖
+- 生命周期计算：推导资源生存区间，为 transient aliasing 准备
+- 自动同步计划：生成 image/buffer barrier（layout/stage/access），减少散落的手写 barrier
+- Pass Culling：剔除无消费者的 pass（例如关闭某调试视图时）
+
+### 3) 执行阶段（FrameGraph::execute）
+
+- 按编译后的执行序列调用每个 pass 的 `execute`
+- 在 pass 边界应用编译得到的 barrier plan
+- 输出 GPU profiling 点（可选），用于后续性能归因
+
+### 4) 与当前代码映射
+
+- `GBufferPass`：写 `GBufferPosition/Normal/Albedo + Depth`
+- `DeferredLightingPass`：读 GBuffer，写 `SceneColor`（离屏）
+- `ImGuiPass`：采样 `SceneColor` 并写 swapchain
+- 后续扩展 pass（Shadow/SSAO/Bloom/TAA）只需声明资源关系，无需改主循环骨架
+
+### 5) 资源策略建议
+
+- 常驻资源：swapchain、持久化 UBO/SSBO、长期缓存纹理
+- 瞬态资源：GBuffer、中间后处理纹理（启用 aliasing）
+- 外部导入资源：swapchain image / scene mesh buffers / UI font texture
+
+### 6) 迁移路径（低风险）
+
+1. 先把现有三个主 pass（GBuffer/Lighting/ImGui）迁入 FrameGraph 的声明式接口
+2. 接入自动 barrier 与 pass culling
+3. 接入 transient aliasing 与可视化导图（GraphViz `.dot`）
+4. 再推进多队列与异步 compute（阶段 4/5）
+
+## 阶段三收尾（已完成）
+
+- [x] 完成 Cook-Torrance 基线（常量 `Metallic/Roughness/AO` + UI）
+- [x] 完成 Scene 组件离屏渲染显示（`SceneColor` -> `ImGui::Image`）
+- [x] 接入材质纹理参数工作流（当前为 procedural map 占位，含 BaseColor/Metallic/Roughness/AO）
+- [x] 引入 IBL 最小闭环（Irradiance + Prefilter + BRDF LUT 的最小可运行近似实现）
+- [x] 统一 PBR 参数来源（常量回退 + map 优先，`Use Procedural Material Maps` 可切换）
+- [x] 输出阶段三验收项（UI 平滑帧时/FPS + Output 周期性能基线日志）
