@@ -1612,6 +1612,10 @@ void Renderer::buildGui() {
     }
     ImGui::SliderInt("Deferred Light Count", &deferredLightCount_, 1, 32);
     ImGui::SliderFloat("Deferred Light Intensity", &deferredLightIntensity_, 0.1f, 8.0f);
+    ImGui::SeparatorText("PBR Material");
+    ImGui::SliderFloat("Metallic", &materialMetallic_, 0.0f, 1.0f);
+    ImGui::SliderFloat("Roughness", &materialRoughness_, 0.04f, 1.0f);
+    ImGui::SliderFloat("AO", &materialAo_, 0.0f, 1.0f);
     const float cameraDistanceMax = std::max(20.0f, sceneRadius_ * 20.0f);
     ImGui::SliderFloat("Camera Distance", &cameraDistance_, 1.0f, cameraDistanceMax);
     if (ImGui::Button("Import Model (.obj)")) {
@@ -1875,6 +1879,11 @@ void Renderer::recordCommandBuffer(VkCommandBuffer commandBuffer, std::uint32_t 
     lightingPushConstants.debugMode = lightingDebugMode_;
     lightingPushConstants.lightCount = std::clamp(deferredLightCount_, 1, 32);
     lightingPushConstants.lightIntensity = std::max(0.1f, deferredLightIntensity_);
+    lightingPushConstants.positionDebugScale = std::max(1.0f, sceneRadius_ * 2.0f);
+    lightingPushConstants.metallic = std::clamp(materialMetallic_, 0.0f, 1.0f);
+    lightingPushConstants.roughness = std::clamp(materialRoughness_, 0.04f, 1.0f);
+    lightingPushConstants.ao = std::clamp(materialAo_, 0.0f, 1.0f);
+    lightingPushConstants.cameraDistance = cameraDistance_;
     vkCmdPushConstants(
         commandBuffer,
         lightingPipelineLayout_,
