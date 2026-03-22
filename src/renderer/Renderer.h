@@ -159,6 +159,12 @@ private:
     bool windowRunning_ = true;
     bool rightDragActive_ = false;
     bool leftDragActive_ = false;
+    bool sceneViewHovered_ = false;
+    bool sceneViewFocused_ = false;
+    int sceneViewportX_ = 0;
+    int sceneViewportY_ = 0;
+    int sceneViewportWidth_ = 0;
+    int sceneViewportHeight_ = 0;
     POINT lastMousePosition_{0, 0};
 
     VkInstance instance_ = VK_NULL_HANDLE;
@@ -178,12 +184,15 @@ private:
     std::vector<VkFramebuffer> swapchainFramebuffers_;
 
     VkRenderPass renderPass_ = VK_NULL_HANDLE;
+    VkRenderPass uiRenderPass_ = VK_NULL_HANDLE;
     VkDescriptorSetLayout descriptorSetLayout_ = VK_NULL_HANDLE;
     VkDescriptorSetLayout lightingDescriptorSetLayout_ = VK_NULL_HANDLE;
     VkPipelineLayout pipelineLayout_ = VK_NULL_HANDLE;
     VkPipelineLayout lightingPipelineLayout_ = VK_NULL_HANDLE;
     VkPipeline graphicsPipeline_ = VK_NULL_HANDLE;
     VkPipeline lightingPipeline_ = VK_NULL_HANDLE;
+
+    VkFramebuffer sceneFramebuffer_ = VK_NULL_HANDLE;
 
     VkImage depthImage_ = VK_NULL_HANDLE;
     VkDeviceMemory depthImageMemory_ = VK_NULL_HANDLE;
@@ -199,6 +208,10 @@ private:
     VkImage gbufferAlbedoImage_ = VK_NULL_HANDLE;
     VkDeviceMemory gbufferAlbedoImageMemory_ = VK_NULL_HANDLE;
     VkImageView gbufferAlbedoImageView_ = VK_NULL_HANDLE;
+    VkImage sceneColorImage_ = VK_NULL_HANDLE;
+    VkDeviceMemory sceneColorImageMemory_ = VK_NULL_HANDLE;
+    VkImageView sceneColorImageView_ = VK_NULL_HANDLE;
+    VkSampler sceneColorSampler_ = VK_NULL_HANDLE;
     VkFormat gbufferPositionFormat_ = VK_FORMAT_R16G16B16A16_SFLOAT;
     VkFormat gbufferNormalFormat_ = VK_FORMAT_R16G16B16A16_SFLOAT;
     VkFormat gbufferAlbedoFormat_ = VK_FORMAT_R8G8B8A8_UNORM;
@@ -224,6 +237,7 @@ private:
     VkDescriptorPool lightingDescriptorPool_ = VK_NULL_HANDLE;
     VkDescriptorSet lightingDescriptorSet_ = VK_NULL_HANDLE;
     VkDescriptorPool imguiDescriptorPool_ = VK_NULL_HANDLE;
+    void* sceneTextureId_ = nullptr;
 
     std::array<VkSemaphore, kMaxFramesInFlight> imageAvailableSemaphores_{};
     std::vector<VkSemaphore> renderFinishedSemaphores_;
