@@ -7,6 +7,7 @@ layout(location = 2) in vec2 inUv;
 layout(location = 0) out vec3 outWorldPos;
 layout(location = 1) out vec3 outWorldNormal;
 layout(location = 2) out vec3 outAlbedo;
+layout(location = 3) out vec2 outUv;
 
 layout(set = 0, binding = 0) uniform Ubo {
     mat4 model;
@@ -22,5 +23,6 @@ void main() {
     outWorldPos = worldPos.xyz;
     outWorldNormal = worldNormal;
     outAlbedo = albedo;
+    outUv = inUv;
     gl_Position = ubo.projection * ubo.view * worldPos;
 }

@@ -1737,9 +1737,11 @@ void Renderer::buildGui() {
     ImGui::SliderInt("Deferred Light Count", &deferredLightCount_, 1, 32);
     ImGui::SliderFloat("Deferred Light Intensity", &deferredLightIntensity_, 0.1f, 8.0f);
     ImGui::SeparatorText("PBR Material");
+    ImGui::Checkbox("Use Procedural Material Maps", &useProceduralMaterialMaps_);
     ImGui::SliderFloat("Metallic", &materialMetallic_, 0.0f, 1.0f);
     ImGui::SliderFloat("Roughness", &materialRoughness_, 0.04f, 1.0f);
     ImGui::SliderFloat("AO", &materialAo_, 0.0f, 1.0f);
+    ImGui::SliderFloat("IBL Intensity", &iblIntensity_, 0.0f, 4.0f);
     const float cameraDistanceMax = std::max(20.0f, sceneRadius_ * 20.0f);
     ImGui::SliderFloat("Camera Distance", &cameraDistance_, 1.0f, cameraDistanceMax);
     if (ImGui::Button("Import Model (.obj)")) {
@@ -1761,7 +1763,11 @@ void Renderer::buildGui() {
         cameraDistance_ = std::clamp(sceneRadius_ * 2.8f, 1.0f, cameraDistanceMax);
         appendOutput("Camera/model transform reset");
     }
-    ImGui::Text("Frame time %.3f ms (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+    const float currentFrameTimeMs = 1000.0f / std::max(ImGui::GetIO().Framerate, 1.0f);
+    smoothedFrameTimeMs_ = (smoothedFrameTimeMs_ <= 0.0f) ? currentFrameTimeMs : (smoothedFrameTimeMs_ * 0.9f + currentFrameTimeMs * 0.1f);
+    smoothedFps_ = (smoothedFrameTimeMs_ > 1e-3f) ? (1000.0f / smoothedFrameTimeMs_) : 0.0f;
+    ImGui::Text("Frame time %.3f ms (%.1f FPS)", currentFrameTimeMs, ImGui::GetIO().Framerate);
+    ImGui::Text("Smoothed %.3f ms (%.1f FPS)", smoothedFrameTimeMs_, smoothedFps_);
     ImGui::End();
 
     ImGui::Begin("Output");
@@ -1886,9 +1892,20 @@ void Renderer::drawFrame() {
     static const auto startTime = std::chrono::high_resolution_clock::now();
     const auto now = std::chrono::high_resolution_clock::now();
     float timeSeconds = std::chrono::duration<float, std::chrono::seconds::period>(now - startTime).count();
+    static float lastTimeSeconds = timeSeconds;
+    const float deltaSeconds = std::max(0.0f, timeSeconds - lastTimeSeconds);
+    lastTimeSeconds = timeSeconds;
+    perfReportAccumulatorSeconds_ += deltaSeconds;
 
     pollAsyncModelImport();
     buildGui();
+    if (perfReportAccumulatorSeconds_ >= 2.0f) {
+        perfReportAccumulatorSeconds_ = 0.0f;
+        appendOutput(
+            "Stage3 Perf baseline: " + std::to_string(smoothedFrameTimeMs_) +
+            " ms / " + std::to_string(smoothedFps_) + " FPS"
+        );
+    }
     updateUniformBuffer(currentFrame_, timeSeconds);
     recordCommandBuffer(commandBuffers_[currentFrame_], imageIndex);
 
@@ -2011,6 +2028,8 @@ void Renderer::recordCommandBuffer(VkCommandBuffer commandBuffer, std::uint32_t 
     lightingPushConstants.roughness = std::clamp(materialRoughness_, 0.04f, 1.0f);
     lightingPushConstants.ao = std::clamp(materialAo_, 0.0f, 1.0f);
     lightingPushConstants.cameraDistance = cameraDistance_;
+    lightingPushConstants.materialTextureWeight = useProceduralMaterialMaps_ ? 1.0f : 0.0f;
+    lightingPushConstants.iblIntensity = std::max(0.0f, iblIntensity_);
     vkCmdPushConstants(
         commandBuffer,
         lightingPipelineLayout_,

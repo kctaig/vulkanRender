@@ -44,6 +44,10 @@ public:
         float roughness = 0.6f;
         float ao = 1.0f;
         float cameraDistance = 3.5f;
+        float materialTextureWeight = 1.0f;
+        float iblIntensity = 1.0f;
+        float padding0 = 0.0f;
+        float padding1 = 0.0f;
     };
 
     bool initialize(unsigned int width, unsigned int height);
@@ -256,8 +260,13 @@ private:
     float materialMetallic_ = 0.1f;
     float materialRoughness_ = 0.6f;
     float materialAo_ = 1.0f;
+    bool useProceduralMaterialMaps_ = true;
+    float iblIntensity_ = 1.0f;
     std::vector<std::string> outputLines_;
     bool autoScrollOutput_ = true;
+    float smoothedFrameTimeMs_ = 0.0f;
+    float smoothedFps_ = 0.0f;
+    float perfReportAccumulatorSeconds_ = 0.0f;
     unsigned int windowWidth_ = 1600;
     unsigned int windowHeight_ = 900;
     bool framebufferResized_ = false;
