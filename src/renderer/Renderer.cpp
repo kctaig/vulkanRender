@@ -344,7 +344,7 @@ bool Renderer::initWindow(unsigned int width, unsigned int height) {
     windowHandle_ = CreateWindowExA(
         0,
         windowClass.lpszClassName,
-        "Vulkan Renderer - Stage 1.5 (Win32 + ImGui)",
+        "Vulkan Renderer",
         WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT,
         CW_USEDEFAULT,
@@ -648,8 +648,7 @@ void Renderer::createRenderPass() {
     colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    // 该 attachment 最终输出到屏幕
-    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
     depthFormat_ = findDepthFormat();
     VkAttachmentDescription depthAttachment{};
@@ -734,15 +733,6 @@ void Renderer::createRenderPass() {
     lightingSubpass.inputAttachmentCount = static_cast<std::uint32_t>(lightingInputAttachmentReferences.size());
     lightingSubpass.pInputAttachments = lightingInputAttachmentReferences.data();
 
-    VkAttachmentReference uiColorAttachmentReference{};
-    uiColorAttachmentReference.attachment = 0;
-    uiColorAttachmentReference.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-    VkSubpassDescription uiSubpass{};
-    uiSubpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    uiSubpass.colorAttachmentCount = 1;
-    uiSubpass.pColorAttachments = &uiColorAttachmentReference;
-
     // --------------------------- dependency -------------------------------
     // 上一帧 / 外部 -> Geomettry Buffer
     // 读 Geometry Buffer -> Liginting 写
@@ -763,13 +753,13 @@ void Renderer::createRenderPass() {
     dependencyGeometryToLighting.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
     dependencyGeometryToLighting.dstAccessMask = VK_ACCESS_INPUT_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
-    VkSubpassDependency dependencyLightingToUi{};
-    dependencyLightingToUi.srcSubpass = 1;
-    dependencyLightingToUi.dstSubpass = 2;
-    dependencyLightingToUi.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependencyLightingToUi.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependencyLightingToUi.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-    dependencyLightingToUi.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    VkSubpassDependency dependencyLightingToExternal{};
+    dependencyLightingToExternal.srcSubpass = 1;
+    dependencyLightingToExternal.dstSubpass = VK_SUBPASS_EXTERNAL;
+    dependencyLightingToExternal.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependencyLightingToExternal.dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    dependencyLightingToExternal.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    dependencyLightingToExternal.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 
     // ---------------------- RenderPass ---------------------------
 
@@ -784,11 +774,11 @@ void Renderer::createRenderPass() {
     renderPassCreateInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
     renderPassCreateInfo.attachmentCount = static_cast<std::uint32_t>(attachments.size());
     renderPassCreateInfo.pAttachments = attachments.data();
-    std::array<VkSubpassDescription, 3> subpasses = {geometrySubpass, lightingSubpass, uiSubpass};
+    std::array<VkSubpassDescription, 2> subpasses = {geometrySubpass, lightingSubpass};
     std::array<VkSubpassDependency, 3> dependencies = {
         dependencyExternalToGeometry,
         dependencyGeometryToLighting,
-        dependencyLightingToUi,
+        dependencyLightingToExternal,
     };
     renderPassCreateInfo.subpassCount = static_cast<std::uint32_t>(subpasses.size());
     renderPassCreateInfo.pSubpasses = subpasses.data();
@@ -797,6 +787,46 @@ void Renderer::createRenderPass() {
 
     if (vkCreateRenderPass(device_, &renderPassCreateInfo, nullptr, &renderPass_) != VK_SUCCESS) {
         throw std::runtime_error("vkCreateRenderPass failed");
+    }
+
+    VkAttachmentDescription uiColorAttachment{};
+    uiColorAttachment.format = swapchainImageFormat_;
+    uiColorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    uiColorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    uiColorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    uiColorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    uiColorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    uiColorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    uiColorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+    VkAttachmentReference uiColorAttachmentReference{};
+    uiColorAttachmentReference.attachment = 0;
+    uiColorAttachmentReference.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    VkSubpassDescription uiSubpass{};
+    uiSubpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    uiSubpass.colorAttachmentCount = 1;
+    uiSubpass.pColorAttachments = &uiColorAttachmentReference;
+
+    VkSubpassDependency uiDependency{};
+    uiDependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+    uiDependency.dstSubpass = 0;
+    uiDependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    uiDependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    uiDependency.srcAccessMask = 0;
+    uiDependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+    VkRenderPassCreateInfo uiRenderPassInfo{};
+    uiRenderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+    uiRenderPassInfo.attachmentCount = 1;
+    uiRenderPassInfo.pAttachments = &uiColorAttachment;
+    uiRenderPassInfo.subpassCount = 1;
+    uiRenderPassInfo.pSubpasses = &uiSubpass;
+    uiRenderPassInfo.dependencyCount = 1;
+    uiRenderPassInfo.pDependencies = &uiDependency;
+
+    if (vkCreateRenderPass(device_, &uiRenderPassInfo, nullptr, &uiRenderPass_) != VK_SUCCESS) {
+        throw std::runtime_error("vkCreateRenderPass for UI failed");
     }
 }
 
@@ -1145,6 +1175,33 @@ void Renderer::createGBufferResources() {
     createImage(
         swapchainExtent_.width,
         swapchainExtent_.height,
+        swapchainImageFormat_,
+        VK_IMAGE_TILING_OPTIMAL,
+        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+        sceneColorImage_,
+        sceneColorImageMemory_
+    );
+    sceneColorImageView_ = createImageView(sceneColorImage_, swapchainImageFormat_, VK_IMAGE_ASPECT_COLOR_BIT);
+
+    VkSamplerCreateInfo samplerInfo{};
+    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    samplerInfo.magFilter = VK_FILTER_LINEAR;
+    samplerInfo.minFilter = VK_FILTER_LINEAR;
+    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.minLod = 0.0f;
+    samplerInfo.maxLod = 0.0f;
+    samplerInfo.maxAnisotropy = 1.0f;
+    if (vkCreateSampler(device_, &samplerInfo, nullptr, &sceneColorSampler_) != VK_SUCCESS) {
+        throw std::runtime_error("vkCreateSampler for scene color failed");
+    }
+
+    createImage(
+        swapchainExtent_.width,
+        swapchainExtent_.height,
         gbufferPositionFormat_,
         VK_IMAGE_TILING_OPTIMAL,
         VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT,
@@ -1186,29 +1243,44 @@ void Renderer::createFramebuffers() {
     // FrameBuffer 中的图像会写到 swapchain中，再呈现到屏幕上
     // 为了实现多缓冲，因此有多个 swapchain，同时也有对应的 FrameBuffer
     // 每次渲染时会获取到一个 swapchain 索引，从而能够访问到对应的 FrameBuffer
-    swapchainFramebuffers_.resize(swapchainImageViews_.size());
-
-    for (std::size_t i = 0; i < swapchainImageViews_.size(); ++i) {
-        // renderpass 中的 attachment 是一种抽象的描述，与 FrameBuffer 中具体的 VkImageView 一一对应起来
-        std::array<VkImageView, 5> attachments = {
-            swapchainImageViews_[i],
+    {
+        std::array<VkImageView, 5> sceneAttachments = {
+            sceneColorImageView_,
             depthImageView_,
             gbufferPositionImageView_,
             gbufferNormalImageView_,
             gbufferAlbedoImageView_,
         };
 
-        VkFramebufferCreateInfo framebufferCreateInfo{};
-        framebufferCreateInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        framebufferCreateInfo.renderPass = renderPass_; // 指定使用改 FrameBuffer 的的 renderpass
-        framebufferCreateInfo.attachmentCount = static_cast<std::uint32_t>(attachments.size());
-        framebufferCreateInfo.pAttachments = attachments.data();
-        framebufferCreateInfo.width = swapchainExtent_.width;
-        framebufferCreateInfo.height = swapchainExtent_.height;
-        framebufferCreateInfo.layers = 1;
+        VkFramebufferCreateInfo sceneFramebufferCreateInfo{};
+        sceneFramebufferCreateInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        sceneFramebufferCreateInfo.renderPass = renderPass_;
+        sceneFramebufferCreateInfo.attachmentCount = static_cast<std::uint32_t>(sceneAttachments.size());
+        sceneFramebufferCreateInfo.pAttachments = sceneAttachments.data();
+        sceneFramebufferCreateInfo.width = swapchainExtent_.width;
+        sceneFramebufferCreateInfo.height = swapchainExtent_.height;
+        sceneFramebufferCreateInfo.layers = 1;
 
-        if (vkCreateFramebuffer(device_, &framebufferCreateInfo, nullptr, &swapchainFramebuffers_[i]) != VK_SUCCESS) {
-            throw std::runtime_error("vkCreateFramebuffer failed");
+        if (vkCreateFramebuffer(device_, &sceneFramebufferCreateInfo, nullptr, &sceneFramebuffer_) != VK_SUCCESS) {
+            throw std::runtime_error("vkCreateFramebuffer for scene failed");
+        }
+    }
+
+    swapchainFramebuffers_.resize(swapchainImageViews_.size());
+    for (std::size_t i = 0; i < swapchainImageViews_.size(); ++i) {
+        VkImageView uiAttachment = swapchainImageViews_[i];
+
+        VkFramebufferCreateInfo uiFramebufferCreateInfo{};
+        uiFramebufferCreateInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        uiFramebufferCreateInfo.renderPass = uiRenderPass_;
+        uiFramebufferCreateInfo.attachmentCount = 1;
+        uiFramebufferCreateInfo.pAttachments = &uiAttachment;
+        uiFramebufferCreateInfo.width = swapchainExtent_.width;
+        uiFramebufferCreateInfo.height = swapchainExtent_.height;
+        uiFramebufferCreateInfo.layers = 1;
+
+        if (vkCreateFramebuffer(device_, &uiFramebufferCreateInfo, nullptr, &swapchainFramebuffers_[i]) != VK_SUCCESS) {
+            throw std::runtime_error("vkCreateFramebuffer for UI failed");
         }
     }
 }
@@ -1569,17 +1641,26 @@ void Renderer::initImGui() {
     initInfo.ApiVersion = VK_API_VERSION_1_2;
     initInfo.MinImageCount = swapchainMinImageCount_;
     initInfo.ImageCount = static_cast<std::uint32_t>(swapchainImages_.size());
-    initInfo.PipelineInfoMain.RenderPass = renderPass_;
-    initInfo.PipelineInfoMain.Subpass = 2;
+    initInfo.PipelineInfoMain.RenderPass = uiRenderPass_;
+    initInfo.PipelineInfoMain.Subpass = 0;
     initInfo.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
 
     ImGui_ImplVulkan_Init(&initInfo);
+    sceneTextureId_ = ImGui_ImplVulkan_AddTexture(
+        sceneColorSampler_,
+        sceneColorImageView_,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+    );
     appendOutput("ImGui initialized");
     appendOutput("Docking enabled");
 }
 
 void Renderer::shutdownImGui() {
     if (ImGui::GetCurrentContext() != nullptr) {
+        if (sceneTextureId_ != nullptr) {
+            ImGui_ImplVulkan_RemoveTexture(reinterpret_cast<VkDescriptorSet>(sceneTextureId_));
+            sceneTextureId_ = nullptr;
+        }
         ImGui_ImplVulkan_Shutdown();
         ImGui_ImplWin32_Shutdown();
         ImGui::DestroyContext();
@@ -1596,9 +1677,52 @@ void Renderer::buildGui() {
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
 
-    ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
+    sceneViewHovered_ = false;
+    sceneViewFocused_ = false;
+    sceneViewportX_ = 0;
+    sceneViewportY_ = 0;
+    sceneViewportWidth_ = static_cast<int>(swapchainExtent_.width);
+    sceneViewportHeight_ = static_cast<int>(swapchainExtent_.height);
 
-    ImGui::Begin("Stage 1.5 Controls");
+    ImGui::PushStyleColor(ImGuiCol_DockingEmptyBg, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+    ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
+    ImGui::PopStyleColor();
+
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+    ImGui::SetNextWindowBgAlpha(0.0f);
+    const ImGuiWindowFlags sceneWindowFlags = ImGuiWindowFlags_NoBackground |
+                                              ImGuiWindowFlags_NoScrollbar |
+                                              ImGuiWindowFlags_NoScrollWithMouse;
+    if (ImGui::Begin("Scene", nullptr, sceneWindowFlags)) {
+        sceneViewHovered_ = ImGui::IsWindowHovered(ImGuiHoveredFlags_RootAndChildWindows);
+        sceneViewFocused_ = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
+
+        const ImVec2 windowPos = ImGui::GetWindowPos();
+        const ImVec2 contentMin = ImGui::GetWindowContentRegionMin();
+        const ImVec2 sceneRegionMin(windowPos.x + contentMin.x, windowPos.y + contentMin.y);
+        ImVec2 sceneRegionSize = ImGui::GetContentRegionAvail();
+        if (sceneRegionSize.x < 8.0f || sceneRegionSize.y < 8.0f) {
+            sceneRegionSize = ImVec2(8.0f, 8.0f);
+        }
+
+        const ImGuiViewport* mainViewport = ImGui::GetMainViewport();
+        const float viewportOriginX = mainViewport != nullptr ? mainViewport->Pos.x : 0.0f;
+        const float viewportOriginY = mainViewport != nullptr ? mainViewport->Pos.y : 0.0f;
+        sceneViewportX_ = std::max(0, static_cast<int>(sceneRegionMin.x - viewportOriginX));
+        sceneViewportY_ = std::max(0, static_cast<int>(sceneRegionMin.y - viewportOriginY));
+        sceneViewportWidth_ = std::max(1, static_cast<int>(sceneRegionSize.x));
+        sceneViewportHeight_ = std::max(1, static_cast<int>(sceneRegionSize.y));
+
+        if (sceneTextureId_ != nullptr) {
+            ImGui::Image(sceneTextureId_, sceneRegionSize, ImVec2(0.0f, 0.0f), ImVec2(1.0f, 1.0f));
+        } else {
+            ImGui::InvisibleButton("##SceneViewportRegion", sceneRegionSize);
+        }
+    }
+    ImGui::End();
+    ImGui::PopStyleColor();
+
+    ImGui::Begin("Stage");
     ImGui::Text("Right Drag: Rotate");
     ImGui::Text("Left Drag: Move");
     ImGui::Text("Mouse Wheel: Zoom");
@@ -1819,7 +1943,7 @@ void Renderer::recordCommandBuffer(VkCommandBuffer commandBuffer, std::uint32_t 
     VkRenderPassBeginInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     renderPassInfo.renderPass = renderPass_;
-    renderPassInfo.framebuffer = swapchainFramebuffers_[imageIndex];
+    renderPassInfo.framebuffer = sceneFramebuffer_;
     renderPassInfo.renderArea.offset = {0, 0};
     renderPassInfo.renderArea.extent = swapchainExtent_;
 
@@ -1836,6 +1960,8 @@ void Renderer::recordCommandBuffer(VkCommandBuffer commandBuffer, std::uint32_t 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline_);
 
     VkViewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
     viewport.width = static_cast<float>(swapchainExtent_.width);
     viewport.height = static_cast<float>(swapchainExtent_.height);
     viewport.minDepth = 0.0f;
@@ -1843,6 +1969,7 @@ void Renderer::recordCommandBuffer(VkCommandBuffer commandBuffer, std::uint32_t 
     vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
 
     VkRect2D scissor{};
+    scissor.offset = {0, 0};
     scissor.extent = swapchainExtent_;
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
@@ -1893,8 +2020,21 @@ void Renderer::recordCommandBuffer(VkCommandBuffer commandBuffer, std::uint32_t 
         &lightingPushConstants
     );
     vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+    vkCmdEndRenderPass(commandBuffer);
 
-    vkCmdNextSubpass(commandBuffer, VK_SUBPASS_CONTENTS_INLINE);
+    VkRenderPassBeginInfo uiRenderPassInfo{};
+    uiRenderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    uiRenderPassInfo.renderPass = uiRenderPass_;
+    uiRenderPassInfo.framebuffer = swapchainFramebuffers_[imageIndex];
+    uiRenderPassInfo.renderArea.offset = {0, 0};
+    uiRenderPassInfo.renderArea.extent = swapchainExtent_;
+
+    VkClearValue uiClearValue{};
+    uiClearValue.color = {{0.02f, 0.03f, 0.05f, 1.0f}};
+    uiRenderPassInfo.clearValueCount = 1;
+    uiRenderPassInfo.pClearValues = &uiClearValue;
+
+    vkCmdBeginRenderPass(commandBuffer, &uiRenderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
     vkCmdEndRenderPass(commandBuffer);
 
@@ -1922,6 +2062,15 @@ void Renderer::recreateSwapchain() {
     createGBufferResources();
     createFramebuffers();
     updateLightingDescriptorSet();
+    if (sceneTextureId_ != nullptr) {
+        ImGui_ImplVulkan_RemoveTexture(reinterpret_cast<VkDescriptorSet>(sceneTextureId_));
+        sceneTextureId_ = nullptr;
+    }
+    sceneTextureId_ = ImGui_ImplVulkan_AddTexture(
+        sceneColorSampler_,
+        sceneColorImageView_,
+        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+    );
     ImGui_ImplVulkan_SetMinImageCount(swapchainMinImageCount_);
     appendOutput("Swapchain recreated");
 
@@ -1943,6 +2092,16 @@ void Renderer::recreateSwapchain() {
 }
 
 void Renderer::cleanupSwapchain() {
+    if (sceneTextureId_ != nullptr && ImGui::GetCurrentContext() != nullptr) {
+        ImGui_ImplVulkan_RemoveTexture(reinterpret_cast<VkDescriptorSet>(sceneTextureId_));
+        sceneTextureId_ = nullptr;
+    }
+
+    if (sceneFramebuffer_ != VK_NULL_HANDLE) {
+        vkDestroyFramebuffer(device_, sceneFramebuffer_, nullptr);
+        sceneFramebuffer_ = VK_NULL_HANDLE;
+    }
+
     for (VkFramebuffer framebuffer : swapchainFramebuffers_) {
         vkDestroyFramebuffer(device_, framebuffer, nullptr);
     }
@@ -2000,6 +2159,23 @@ void Renderer::cleanupSwapchain() {
         gbufferAlbedoImageMemory_ = VK_NULL_HANDLE;
     }
 
+    if (sceneColorSampler_ != VK_NULL_HANDLE) {
+        vkDestroySampler(device_, sceneColorSampler_, nullptr);
+        sceneColorSampler_ = VK_NULL_HANDLE;
+    }
+    if (sceneColorImageView_ != VK_NULL_HANDLE) {
+        vkDestroyImageView(device_, sceneColorImageView_, nullptr);
+        sceneColorImageView_ = VK_NULL_HANDLE;
+    }
+    if (sceneColorImage_ != VK_NULL_HANDLE) {
+        vkDestroyImage(device_, sceneColorImage_, nullptr);
+        sceneColorImage_ = VK_NULL_HANDLE;
+    }
+    if (sceneColorImageMemory_ != VK_NULL_HANDLE) {
+        vkFreeMemory(device_, sceneColorImageMemory_, nullptr);
+        sceneColorImageMemory_ = VK_NULL_HANDLE;
+    }
+
     if (graphicsPipeline_ != VK_NULL_HANDLE) {
         vkDestroyPipeline(device_, graphicsPipeline_, nullptr);
         graphicsPipeline_ = VK_NULL_HANDLE;
@@ -2023,6 +2199,11 @@ void Renderer::cleanupSwapchain() {
     if (renderPass_ != VK_NULL_HANDLE) {
         vkDestroyRenderPass(device_, renderPass_, nullptr);
         renderPass_ = VK_NULL_HANDLE;
+    }
+
+    if (uiRenderPass_ != VK_NULL_HANDLE) {
+        vkDestroyRenderPass(device_, uiRenderPass_, nullptr);
+        uiRenderPass_ = VK_NULL_HANDLE;
     }
 
     for (VkImageView imageView : swapchainImageViews_) {
@@ -2335,12 +2516,23 @@ LRESULT CALLBACK Renderer::WindowProc(HWND hWnd, UINT message, WPARAM wParam, LP
 }
 
 LRESULT Renderer::handleWindowMessage(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
+    const bool isMouseMessage = message == WM_RBUTTONDOWN ||
+                                message == WM_RBUTTONUP ||
+                                message == WM_LBUTTONDOWN ||
+                                message == WM_LBUTTONUP ||
+                                message == WM_MOUSEMOVE ||
+                                message == WM_MOUSEWHEEL;
+
+    bool imguiHandled = false;
     bool uiCapturingMouse = false;
     if (ImGui::GetCurrentContext() != nullptr) {
-        if (::ImGui_ImplWin32_WndProcHandler(hWnd, message, wParam, lParam) != 0) {
-            return 1;
-        }
+        imguiHandled = (::ImGui_ImplWin32_WndProcHandler(hWnd, message, wParam, lParam) != 0);
         uiCapturingMouse = ImGui::GetIO().WantCaptureMouse;
+    }
+
+    const bool sceneAllowsMouseInteraction = sceneViewHovered_ || sceneViewFocused_;
+    if (imguiHandled && !(isMouseMessage && sceneAllowsMouseInteraction)) {
+        return 1;
     }
 
     switch (message) {
@@ -2356,7 +2548,7 @@ LRESULT Renderer::handleWindowMessage(HWND hWnd, UINT message, WPARAM wParam, LP
         }
         return 0;
     case WM_RBUTTONDOWN:
-        if (uiCapturingMouse) {
+        if (uiCapturingMouse && !sceneAllowsMouseInteraction) {
             rightDragActive_ = false;
             return 0;
         }
@@ -2367,7 +2559,7 @@ LRESULT Renderer::handleWindowMessage(HWND hWnd, UINT message, WPARAM wParam, LP
         rightDragActive_ = false;
         return 0;
     case WM_LBUTTONDOWN:
-        if (uiCapturingMouse) {
+        if (uiCapturingMouse && !sceneAllowsMouseInteraction) {
             leftDragActive_ = false;
             return 0;
         }
@@ -2383,7 +2575,7 @@ LRESULT Renderer::handleWindowMessage(HWND hWnd, UINT message, WPARAM wParam, LP
         const float deltaY = static_cast<float>(currentPoint.y - lastMousePosition_.y);
         lastMousePosition_ = currentPoint;
 
-        if (uiCapturingMouse) {
+        if (uiCapturingMouse && !sceneAllowsMouseInteraction) {
             rightDragActive_ = false;
             leftDragActive_ = false;
             return 0;
@@ -2400,7 +2592,7 @@ LRESULT Renderer::handleWindowMessage(HWND hWnd, UINT message, WPARAM wParam, LP
         return 0;
     }
     case WM_MOUSEWHEEL: {
-        if (uiCapturingMouse) {
+        if (uiCapturingMouse && !sceneAllowsMouseInteraction) {
             return 0;
         }
         const short wheelDelta = GET_WHEEL_DELTA_WPARAM(wParam);
