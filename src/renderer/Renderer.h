@@ -39,7 +39,11 @@ public:
         std::int32_t debugMode = 0;
         std::int32_t lightCount = 8;
         float lightIntensity = 2.0f;
-        float padding = 0.0f;
+        float positionDebugScale = 1.0f;
+        float metallic = 0.1f;
+        float roughness = 0.6f;
+        float ao = 1.0f;
+        float cameraDistance = 3.5f;
     };
 
     bool initialize(unsigned int width, unsigned int height);
@@ -235,6 +239,9 @@ private:
     std::int32_t lightingDebugMode_ = 0;
     std::int32_t deferredLightCount_ = 8;
     float deferredLightIntensity_ = 2.0f;
+    float materialMetallic_ = 0.1f;
+    float materialRoughness_ = 0.6f;
+    float materialAo_ = 1.0f;
     std::vector<std::string> outputLines_;
     bool autoScrollOutput_ = true;
     unsigned int windowWidth_ = 1600;
