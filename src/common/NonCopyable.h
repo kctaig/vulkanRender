@@ -1,3 +1,7 @@
+﻿/**
+ * @file NonCopyable.h
+ * @brief Declarations for the NonCopyable module.
+ */
 #pragma once
 
 namespace vr {
@@ -15,3 +19,5 @@ public:
 };
 
 } // namespace vr
+
+

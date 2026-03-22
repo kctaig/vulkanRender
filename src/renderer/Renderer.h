@@ -1,8 +1,11 @@
+﻿/**
+ * @file Renderer.h
+ * @brief Main renderer orchestrator declarations.
+ */
 #pragma once
 
 #include <array>
 #include <cstdint>
-#include <future>
 #include <string>
 #include <vector>
 
@@ -14,27 +17,65 @@
 
 #include <glm/glm.hpp>
 
+#include "renderer/frame/FrameRecorder.h"
+#include "renderer/frame/CameraUniformService.h"
+#include "renderer/frame/DrawFrameOrchestrator.h"
+#include "renderer/frame/LightingPushBuilder.h"
+#include "renderer/frame/SyncManager.h"
+#include "renderer/ui/GuiContextBuilder.h"
+#include "renderer/ui/GuiLayer.h"
+#include "renderer/ui/ImGuiContextBuilder.h"
+#include "renderer/ui/ImGuiBackend.h"
+#include "renderer/descriptor/DescriptorBuilder.h"
+#include "renderer/format/FormatSelector.h"
+#include "renderer/framegraph/RenderGraph.h"
+#include "renderer/input/InputController.h"
+#include "renderer/lifecycle/RendererTeardown.h"
+#include "renderer/lifecycle/RendererInitPipeline.h"
+#include "renderer/lifecycle/ResourceLifecycleValidator.h"
+#include "renderer/lifecycle/SwapchainLifecycle.h"
+#include "renderer/lifecycle/SwapchainRebuilder.h"
+#include "renderer/lifecycle/VulkanBootstrap.h"
+#include "renderer/memory/BufferImageAllocator.h"
+#include "renderer/model/ModelImportService.h"
+#include "renderer/pipeline/PipelineBuilder.h"
+#include "renderer/query/SwapchainQuery.h"
+#include "renderer/resources/RenderTargetsBuilder.h"
+#include "renderer/shader/ShaderManager.h"
+#include "renderer/swapchain/Swapchain.h"
 #include "scene/MeshIO.h"
 
 namespace vr {
 
+/**
+ * @brief High-level Vulkan renderer.
+ *
+ * This class owns the render window, Vulkan instance/device/swapchain state,
+ * frame synchronization objects, and UI integration. It delegates specialized
+ * tasks to dedicated helper modules while keeping lifecycle orchestration here.
+ */
 class Renderer {
 public:
+    /** @brief Vertex layout used by geometry buffers and graphics pipelines. */
     struct Vertex {
         glm::vec3 position;
         glm::vec3 normal;
         glm::vec2 uv;
 
+        /** @brief Returns the Vulkan binding description for this vertex type. */
         static VkVertexInputBindingDescription getBindingDescription();
+        /** @brief Returns Vulkan attribute descriptions for position/normal/uv. */
         static std::array<VkVertexInputAttributeDescription, 3> getAttributeDescriptions();
     };
 
+    /** @brief Uniform data written each frame for the active camera/model state. */
     struct UniformBufferObject {
         glm::mat4 model = glm::mat4(1.0f);
         glm::mat4 view = glm::mat4(1.0f);
         glm::mat4 projection = glm::mat4(1.0f);
     };
 
+    /** @brief Push constants consumed by the deferred lighting pass. */
     struct LightingPushConstants {
         std::int32_t debugMode = 0;
         std::int32_t lightCount = 8;
@@ -50,9 +91,13 @@ public:
         float padding1 = 0.0f;
     };
 
+    /** @brief Initializes the window and Vulkan runtime objects. */
     bool initialize(unsigned int width, unsigned int height);
+    /** @brief Sets an optional mesh file path used on startup. */
     void setMeshInputPath(std::string path);
+    /** @brief Runs the render loop until shutdown is requested. */
     void mainLoop();
+    /** @brief Destroys all renderer-owned resources in dependency-safe order. */
     void shutdown();
 
 private:
@@ -75,6 +120,7 @@ private:
 
     bool initWindow(unsigned int width, unsigned int height);
     bool initVulkan();
+    VulkanBootstrap::BootstrapContext buildBootstrapContext();
     bool processWindowMessages();
     void createInstance();
     void setupDebugMessenger();
@@ -110,6 +156,8 @@ private:
     void buildGui();
     void appendOutput(std::string message);
     void drawFrame();
+    void recordScenePass(VkCommandBuffer commandBuffer);
+    void recordUiPass(VkCommandBuffer commandBuffer, std::uint32_t imageIndex);
     void recordCommandBuffer(VkCommandBuffer commandBuffer, std::uint32_t imageIndex);
     void recreateSwapchain();
     void cleanupSwapchain();
@@ -229,10 +277,33 @@ private:
     VkDeviceMemory indexBufferMemory_ = VK_NULL_HANDLE;
     std::vector<Vertex> meshVertices_;
     std::vector<std::uint32_t> meshIndices_;
-    std::future<MeshInputData> pendingMeshLoadTask_;
-    bool modelImportInProgress_ = false;
-    std::string pendingMeshPath_;
+    ModelImportService modelImportService_;
     float sceneRadius_ = 1.0f;
+    RenderGraph frameGraph_;
+    CameraUniformService cameraUniformService_;
+    DrawFrameOrchestrator drawFrameOrchestrator_;
+    FrameRecorder frameRecorder_;
+    LightingPushBuilder lightingPushBuilder_;
+    SyncManager syncManager_;
+    GuiContextBuilder guiContextBuilder_;
+    ImGuiContextBuilder imguiContextBuilder_;
+    GuiLayer guiLayer_;
+    ImGuiBackend imguiBackend_;
+    DescriptorBuilder descriptorBuilder_;
+    FormatSelector formatSelector_;
+    InputController inputController_;
+    RendererInitPipeline rendererInitPipeline_;
+    RendererTeardown rendererTeardown_;
+    ResourceLifecycleValidator lifecycleValidator_;
+    SwapchainLifecycle swapchainLifecycle_;
+    SwapchainRebuilder swapchainRebuilder_;
+    VulkanBootstrap vulkanBootstrap_;
+    BufferImageAllocator bufferImageAllocator_;
+    SwapchainQuery swapchainQuery_;
+    Swapchain swapchainManager_;
+    PipelineBuilder pipelineBuilder_;
+    RenderTargetsBuilder renderTargetsBuilder_;
+    ShaderManager shaderManager_;
 
     std::array<VkBuffer, kMaxFramesInFlight> uniformBuffers_{};
     std::array<VkDeviceMemory, kMaxFramesInFlight> uniformBuffersMemory_{};
@@ -275,3 +346,4 @@ private:
 };
 
 } // namespace vr
+

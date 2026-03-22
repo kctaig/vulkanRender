@@ -59,15 +59,39 @@ set(VR_SOURCES
     src/core/Application.cpp
     src/scene/MeshIO.cpp
     src/renderer/Renderer.cpp
-    src/renderer/Device.cpp
-    src/renderer/Swapchain.cpp
-    src/renderer/ResourceManager.cpp
-    src/renderer/PipelineManager.cpp
-    src/renderer/RenderGraph.cpp
+    src/renderer/swapchain/Swapchain.cpp
+    src/renderer/frame/FrameRecorder.cpp
+    src/renderer/frame/CameraUniformService.cpp
+    src/renderer/frame/DrawFrameOrchestrator.cpp
+    src/renderer/frame/LightingPushBuilder.cpp
+    src/renderer/frame/PresentFlow.cpp
+    src/renderer/frame/SyncManager.cpp
+    src/renderer/ui/GuiContextBuilder.cpp
+    src/renderer/ui/GuiLayer.cpp
+    src/renderer/ui/ImGuiContextBuilder.cpp
+    src/renderer/ui/ImGuiBackend.cpp
+    src/renderer/descriptor/DescriptorBuilder.cpp
+    src/renderer/format/FormatSelector.cpp
+    src/renderer/input/InputController.cpp
+    src/renderer/lifecycle/RendererTeardown.cpp
+    src/renderer/lifecycle/RendererInitPipeline.cpp
+    src/renderer/lifecycle/ResourceLifecycleValidator.cpp
+    src/renderer/lifecycle/SwapchainLifecycle.cpp
+    src/renderer/lifecycle/SwapchainRebuilder.cpp
+    src/renderer/lifecycle/VulkanBootstrap.cpp
+    src/renderer/memory/BufferImageAllocator.cpp
+    src/renderer/model/ModelImportService.cpp
+    src/renderer/pipeline/PipelineBuilder.cpp
+    src/renderer/query/SwapchainQuery.cpp
+    src/renderer/resources/RenderTargetsBuilder.cpp
+    src/renderer/shader/ShaderManager.cpp
+    src/renderer/framegraph/RenderGraph.cpp
     src/renderer/passes/GBufferPass.cpp
     src/renderer/passes/ShadowPass.cpp
     src/renderer/passes/LightingPass.cpp
     src/renderer/passes/PostProcessPass.cpp
+    src/renderer/framegraph/passes/SceneFrameGraphPass.cpp
+    src/renderer/framegraph/passes/UiFrameGraphPass.cpp
 )
 
 add_executable(vulkan_renderer ${VR_SOURCES})
@@ -111,6 +135,10 @@ target_compile_definitions(vulkan_renderer PRIVATE
     VR_SHADER_DIR="${VR_SHADER_BINARY_DIR}"
     VR_ASSET_DIR="${CMAKE_CURRENT_SOURCE_DIR}/assets"
 )
+
+if(MSVC)
+    target_compile_options(vulkan_renderer PRIVATE /utf-8)
+endif()
 
 set_project_warnings(vulkan_renderer)
 

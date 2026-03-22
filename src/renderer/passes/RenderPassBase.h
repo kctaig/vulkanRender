@@ -1,12 +1,23 @@
+﻿/**
+ * @file RenderPassBase.h
+ * @brief Declarations for the RenderPassBase module.
+ */
 #pragma once
+
+#include <string_view>
+
+#include "renderer/framegraph/RenderGraph.h"
 
 namespace vr {
 
-class RenderPassBase {
+class RenderPassBase : public RenderGraph::IPass {
 public:
     virtual ~RenderPassBase() = default;
-    virtual void setup() = 0;
+    [[nodiscard]] virtual std::string_view name() const = 0;
+    virtual void setup(RenderGraph::PassBuilder& builder) = 0;
     virtual void execute() = 0;
 };
 
 } // namespace vr
+
+

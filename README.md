@@ -20,7 +20,22 @@
 ├─ src/
  备注：当前已进入阶段 3，lighting 已切换为 Cook-Torrance 基线（常量 `Metallic/Roughness/AO` + UI 可调）。
 │  ├─ renderer/
-│  │  └─ passes/
+│  │  ├─ frame/                # 帧编排/录制/常量/同步职责（DrawFrameOrchestrator/PresentFlow/FrameRecorder/LightingPushBuilder/SyncManager/CameraUniformService）
+│  │  ├─ framegraph/           # 图编译/调度职责（RenderGraph + graph passes）
+│  │  │  └─ passes/
+│  │  ├─ descriptor/           # 描述符资源职责（DescriptorBuilder）
+│  │  ├─ format/               # Vulkan 格式能力选择职责（FormatSelector）
+│  │  ├─ input/                # 窗口输入与交互职责（InputController）
+│  │  ├─ lifecycle/            # 生命周期职责（RendererInitPipeline/SwapchainLifecycle/SwapchainRebuilder/VulkanBootstrap/RendererTeardown/ResourceLifecycleValidator）
+│  │  ├─ memory/               # Buffer/Image 分配职责（BufferImageAllocator）
+│  │  ├─ model/                # 模型导入职责（ModelImportService）
+│  │  ├─ pipeline/             # RenderPass/Pipeline 构建职责（PipelineBuilder）
+│  │  ├─ query/                # 设备/交换链查询职责（SwapchainQuery）
+│  │  ├─ resources/            # 渲染目标资源构建职责（RenderTargetsBuilder）
+│  │  ├─ shader/               # Shader 文件/模块职责（ShaderManager）
+│  │  ├─ swapchain/            # Swapchain 构建职责（创建 + image views）
+│  │  ├─ ui/                   # UI 组装与后端职责（GuiContextBuilder/ImGuiContextBuilder/GuiLayer/ImGuiBackend）
+│  │  └─ passes/               # 具体渲染 pass（GBuffer/Lighting/Shadow/PostProcess）
 │  ├─ scene/
 
 - 当前唯一渲染实现文件：`src/renderer/Renderer.cpp`
@@ -148,6 +163,52 @@ shader 会按索引将光源分布在场景周围环带上（见 `shaders/deferr
 2. 接入自动 barrier 与 pass culling
 3. 接入 transient aliasing 与可视化导图（GraphViz `.dot`）
 4. 再推进多队列与异步 compute（阶段 4/5）
+
+### 7) OOP 重构进度（当前实现）
+
+- 已将 `RenderGraph` 升级为面向对象接口：`RenderGraph::IPass`
+- 已支持两种接入方式：
+	- `addPass(name, lambda)`（快速接入）
+	- `addPass(std::unique_ptr<IPass>)`（完整 OOP）
+- 已实现编译阶段依赖分析与拓扑排序：基于 `reads/writes` 自动生成执行顺序
+- 已实现循环依赖保护：检测环后自动回退到声明顺序
+- `Renderer` 主渲染路径已迁移为 OOP pass 对象执行：
+	- `ScenePass`（离屏场景）
+	- `ImGuiPass`（UI 合成到 swapchain）
+- `Renderer.cpp` 已开始按 OOP 持续分解：
+	- 图执行节点类已从 `Renderer.cpp` 抽离到 `src/renderer/framegraph/passes/SceneFrameGraphPass.*`
+	- 图执行节点类已从 `Renderer.cpp` 抽离到 `src/renderer/framegraph/passes/UiFrameGraphPass.*`
+	- 命令录制逻辑已抽离到 `src/renderer/frame/FrameRecorder.*`（`recordScenePass/recordUiPass`）
+	- GUI 构建逻辑已抽离到 `src/renderer/ui/GuiLayer.*`（`buildGui` 状态与交互）
+	- 描述符布局/池/集合管理已抽离到 `src/renderer/descriptor/DescriptorBuilder.*`（`setLayout/pool/set/update`）
+	- Vulkan 格式能力选择逻辑已抽离到 `src/renderer/format/FormatSelector.*`（`findSupportedFormat/findDepthFormat`）
+	- 窗口消息与交互输入逻辑已抽离到 `src/renderer/input/InputController.*`（`mouse drag/zoom/resize/close`）
+	- 交换链生命周期管理已抽离到 `src/renderer/lifecycle/SwapchainLifecycle.*`（`cleanup/recreate` 资源与信号量重建）
+	- Buffer/Image 内存分配逻辑已抽离到 `src/renderer/memory/BufferImageAllocator.*`（`findMemoryType/createBuffer/createImage/createImageView`）
+	- RenderPass/Pipeline 构建逻辑已抽离到 `src/renderer/pipeline/PipelineBuilder.*`（`RenderPass/GraphicsPipeline/LightingPipeline`）
+	- 设备与交换链能力查询逻辑已抽离到 `src/renderer/query/SwapchainQuery.*`（`queue family/support/device suitability`）
+	- 渲染目标创建逻辑已抽离到 `src/renderer/resources/RenderTargetsBuilder.*`（`Depth/GBuffer/Framebuffer` 构建）
+	- Shader 文件读取与模块创建已抽离到 `src/renderer/shader/ShaderManager.*`（`readBinaryFile/createShaderModule`）
+	- ImGui 后端实现已抽离到 `src/renderer/ui/ImGuiBackend.*`（`descriptor pool/init/newFrame/render/shutdown`）
+	- Vulkan 启动流程已抽离到 `src/renderer/lifecycle/VulkanBootstrap.*`（`instance/debug/surface/device bootstrap`）
+	- Renderer 清理流程已抽离到 `src/renderer/lifecycle/RendererTeardown.*`（`descriptor/buffer/sync/device/surface teardown`）
+	- Swapchain 构建流程已收敛到 `src/renderer/swapchain/Swapchain.*`（`create/createImageViews`）
+	- Swapchain 重建编排已抽离到 `src/renderer/lifecycle/SwapchainRebuilder.*`（`recreate sequence orchestration`）
+	- Renderer 初始化编排已抽离到 `src/renderer/lifecycle/RendererInitPipeline.*`（`initVulkan sequence orchestration`）
+	- GUI 上下文装配已抽离到 `src/renderer/ui/GuiContextBuilder.*`（`GuiLayer::BuildContext assembly`）
+	- ImGui 初始化上下文装配已抽离到 `src/renderer/ui/ImGuiContextBuilder.*`（`ImGuiBackend::InitContext assembly`）
+	- Lighting push 常量装配已抽离到 `src/renderer/frame/LightingPushBuilder.*`（`recordScenePass constants assembly`）
+	- 帧级执行编排已抽离到 `src/renderer/frame/DrawFrameOrchestrator.*`（`drawFrame acquire/submit/present orchestration`）
+	- Present 结果分支策略已抽离到 `src/renderer/frame/PresentFlow.*`（`acquire/present result handling`）
+	- 同步对象创建与重建已抽离到 `src/renderer/frame/SyncManager.*`（`createSyncObjects + renderFinished semaphores recreate`）
+	- 异步模型导入状态机已抽离到 `src/renderer/model/ModelImportService.*`（`start/poll import task lifecycle`）
+	- 相机 UBO 矩阵计算已抽离到 `src/renderer/frame/CameraUniformService.*`（`updateUniformBuffer matrix assembly`）
+	- 生命周期一致性校验已抽离到 `src/renderer/lifecycle/ResourceLifecycleValidator.*`（`sync/shutdown consistency checks`）
+- `passes/` 目录下 pass 基类已统一到 OOP FrameGraph 风格：
+	- `RenderPassBase` 继承 `RenderGraph::IPass`
+	- `GBuffer/Lighting/Shadow/PostProcess` 均实现 `name/setup/execute`
+
+> 注：当前已完成“工程级 OOP FrameGraph 主链路重构”，后续阶段将继续扩展自动 barrier plan、资源别名复用与多队列调度。
 
 ## 阶段三收尾（已完成）
 

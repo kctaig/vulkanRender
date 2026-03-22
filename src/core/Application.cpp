@@ -1,3 +1,7 @@
+﻿/**
+ * @file Application.cpp
+ * @brief Implementation for the Application module.
+ */
 #include "core/Application.h"
 
 #include <iostream>
@@ -24,3 +28,5 @@ int Application::run(int argc, char** argv) {
 }
 
 } // namespace vr
+
+

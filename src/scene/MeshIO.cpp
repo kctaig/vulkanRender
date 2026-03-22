@@ -1,3 +1,7 @@
+﻿/**
+ * @file MeshIO.cpp
+ * @brief Implementation for the MeshIO module.
+ */
 #include "scene/MeshIO.h"
 
 #include <algorithm>
@@ -192,3 +196,5 @@ bool loadObjMesh(const std::string& filePath, MeshInputData& outMesh) {
 }
 
 } // namespace vr
+
+
