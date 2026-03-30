@@ -59,15 +59,6 @@ set(VR_SOURCES
     src/core/Application.cpp
     src/scene/MeshIO.cpp
     src/renderer/Renderer.cpp
-    src/renderer/Device.cpp
-    src/renderer/Swapchain.cpp
-    src/renderer/ResourceManager.cpp
-    src/renderer/PipelineManager.cpp
-    src/renderer/RenderGraph.cpp
-    src/renderer/passes/GBufferPass.cpp
-    src/renderer/passes/ShadowPass.cpp
-    src/renderer/passes/LightingPass.cpp
-    src/renderer/passes/PostProcessPass.cpp
 )
 
 add_executable(vulkan_renderer ${VR_SOURCES})
