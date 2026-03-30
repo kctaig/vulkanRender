@@ -1,5 +1,11 @@
 ﻿#include "renderer/Renderer.h"
 
+#include <Windowsx.h>
+#include <backends/imgui_impl_vulkan.h>
+#include <backends/imgui_impl_win32.h>
+#include <commdlg.h>
+#include <imgui.h>
+
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -7,6 +13,7 @@
 #include <cstdint>
 #include <cstring>
 #include <fstream>
+#include <glm/gtc/matrix_transform.hpp>
 #include <iostream>
 #include <set>
 #include <stdexcept>
@@ -14,18 +21,10 @@
 #include <utility>
 #include <vector>
 
-#include <imgui.h>
-#include <backends/imgui_impl_vulkan.h>
-#include <backends/imgui_impl_win32.h>
-
-#include <commdlg.h>
-#include <Windowsx.h>
-
-#include <glm/gtc/matrix_transform.hpp>
-
 #include "scene/MeshIO.h"
 
-extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+extern IMGUI_IMPL_API LRESULT
+ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 namespace vr {
 
@@ -76,17 +75,14 @@ bool isInstanceExtensionSupported(const char* extensionName) {
 void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo) {
     createInfo = {};
     createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
-    createInfo.messageSeverity =
-        VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
-        VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
-    createInfo.messageType =
-        VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
-        VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
-        VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
-    createInfo.pfnUserCallback = [](VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
-                                    VkDebugUtilsMessageTypeFlagsEXT,
-                                    const VkDebugUtilsMessengerCallbackDataEXT* callbackData,
-                                    void*) -> VkBool32 {
+    createInfo.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+                                 VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+    createInfo.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
+                             VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+                             VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+    createInfo.pfnUserCallback =
+        [](VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT,
+           const VkDebugUtilsMessengerCallbackDataEXT* callbackData, void*) -> VkBool32 {
         const char* severity = "INFO";
         if ((messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) != 0U) {
             severity = "ERROR";
@@ -95,7 +91,8 @@ void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& create
         }
 
         if (callbackData != nullptr && callbackData->pMessage != nullptr) {
-            std::cerr << "[Vulkan Validation][" << severity << "] " << callbackData->pMessage << "\n";
+            std::cerr << "[Vulkan Validation][" << severity << "] " << callbackData->pMessage
+                      << "\n";
         }
         return VK_FALSE;
     };
@@ -127,7 +124,9 @@ bool hasStencilComponent(VkFormat format) {
     return format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT;
 }
 
-int imguiWin32CreateVkSurface(ImGuiViewport* viewport, ImU64 vkInstance, const void* vkAllocators, ImU64* outVkSurface) {
+int imguiWin32CreateVkSurface(
+    ImGuiViewport* viewport, ImU64 vkInstance, const void* vkAllocators, ImU64* outVkSurface
+) {
     if (viewport == nullptr || outVkSurface == nullptr || viewport->PlatformHandleRaw == nullptr) {
         return static_cast<int>(VK_ERROR_INITIALIZATION_FAILED);
     }
@@ -139,17 +138,15 @@ int imguiWin32CreateVkSurface(ImGuiViewport* viewport, ImU64 vkInstance, const v
 
     VkSurfaceKHR surface = VK_NULL_HANDLE;
     const VkResult result = vkCreateWin32SurfaceKHR(
-        reinterpret_cast<VkInstance>(static_cast<uintptr_t>(vkInstance)),
-        &createInfo,
-        static_cast<const VkAllocationCallbacks*>(vkAllocators),
-        &surface
+        reinterpret_cast<VkInstance>(static_cast<uintptr_t>(vkInstance)), &createInfo,
+        static_cast<const VkAllocationCallbacks*>(vkAllocators), &surface
     );
 
     *outVkSurface = static_cast<ImU64>(reinterpret_cast<uintptr_t>(surface));
     return static_cast<int>(result);
 }
 
-} // namespace
+}  // namespace
 
 VkVertexInputBindingDescription Renderer::Vertex::getBindingDescription() {
     VkVertexInputBindingDescription bindingDescription{};
@@ -342,18 +339,9 @@ bool Renderer::initWindow(unsigned int width, unsigned int height) {
     AdjustWindowRect(&windowRect, WS_OVERLAPPEDWINDOW, FALSE);
 
     windowHandle_ = CreateWindowExA(
-        0,
-        windowClass.lpszClassName,
-        "Vulkan Renderer",
-        WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT,
-        CW_USEDEFAULT,
-        windowRect.right - windowRect.left,
-        windowRect.bottom - windowRect.top,
-        nullptr,
-        nullptr,
-        instanceHandle_,
-        this
+        0, windowClass.lpszClassName, "Vulkan Renderer", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT,
+        CW_USEDEFAULT, windowRect.right - windowRect.left, windowRect.bottom - windowRect.top,
+        nullptr, nullptr, instanceHandle_, this
     );
 
     if (windowHandle_ == nullptr) {
@@ -427,7 +415,9 @@ void Renderer::createInstance() {
     applicationInfo.engineVersion = VK_MAKE_VERSION(0, 1, 0);
     applicationInfo.apiVersion = VK_API_VERSION_1_2;
 
-    std::vector<const char*> enabledInstanceExtensions(kInstanceExtensions.begin(), kInstanceExtensions.end());
+    std::vector<const char*> enabledInstanceExtensions(
+        kInstanceExtensions.begin(), kInstanceExtensions.end()
+    );
     const bool shouldEnableValidation = kEnableValidationLayers && areValidationLayersSupported();
     const bool supportsDebugUtils = isInstanceExtensionSupported(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     if (shouldEnableValidation && supportsDebugUtils) {
@@ -481,7 +471,8 @@ void Renderer::setupDebugMessenger() {
         throw std::runtime_error("vkCreateDebugUtilsMessengerEXT not found");
     }
 
-    if (createDebugUtilsMessenger(instance_, &createInfo, nullptr, &debugMessenger_) != VK_SUCCESS) {
+    if (createDebugUtilsMessenger(instance_, &createInfo, nullptr, &debugMessenger_) !=
+        VK_SUCCESS) {
         throw std::runtime_error("vkCreateDebugUtilsMessengerEXT failed");
     }
 
@@ -628,7 +619,8 @@ void Renderer::createImageViews() {
     swapchainImageViews_.resize(swapchainImages_.size());
 
     for (std::size_t i = 0; i < swapchainImages_.size(); ++i) {
-        swapchainImageViews_[i] = createImageView(swapchainImages_[i], swapchainImageFormat_, VK_IMAGE_ASPECT_COLOR_BIT);
+        swapchainImageViews_[i] =
+            createImageView(swapchainImages_[i], swapchainImageFormat_, VK_IMAGE_ASPECT_COLOR_BIT);
     }
 }
 
@@ -710,7 +702,8 @@ void Renderer::createRenderPass() {
     // 输入：顶点数据
     geometrySubpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     // 同时写三个 target (MRT)
-    geometrySubpass.colorAttachmentCount = static_cast<std::uint32_t>(geometryColorAttachmentReferences.size());
+    geometrySubpass.colorAttachmentCount =
+        static_cast<std::uint32_t>(geometryColorAttachmentReferences.size());
     geometrySubpass.pColorAttachments = geometryColorAttachmentReferences.data();
     // 开启深度测试
     geometrySubpass.pDepthStencilAttachment = &depthAttachmentReference;
@@ -730,7 +723,8 @@ void Renderer::createRenderPass() {
     lightingSubpass.colorAttachmentCount = 1;
     lightingSubpass.pColorAttachments = &lightingColorAttachmentReference;
     // 输入：GBuffer，inputAttachement 是 tiled-based 优化，不写回显存，直接在 tile cache 读 GBuffer
-    lightingSubpass.inputAttachmentCount = static_cast<std::uint32_t>(lightingInputAttachmentReferences.size());
+    lightingSubpass.inputAttachmentCount =
+        static_cast<std::uint32_t>(lightingInputAttachmentReferences.size());
     lightingSubpass.pInputAttachments = lightingInputAttachmentReferences.data();
 
     // --------------------------- dependency -------------------------------
@@ -741,17 +735,24 @@ void Renderer::createRenderPass() {
     VkSubpassDependency dependencyExternalToGeometry{};
     dependencyExternalToGeometry.srcSubpass = VK_SUBPASS_EXTERNAL;
     dependencyExternalToGeometry.dstSubpass = 0;
-    dependencyExternalToGeometry.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-    dependencyExternalToGeometry.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-    dependencyExternalToGeometry.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    dependencyExternalToGeometry.srcStageMask =
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    dependencyExternalToGeometry.dstStageMask =
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    dependencyExternalToGeometry.dstAccessMask =
+        VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 
     VkSubpassDependency dependencyGeometryToLighting{};
     dependencyGeometryToLighting.srcSubpass = 0;
     dependencyGeometryToLighting.dstSubpass = 1;
-    dependencyGeometryToLighting.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
-    dependencyGeometryToLighting.dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependencyGeometryToLighting.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-    dependencyGeometryToLighting.dstAccessMask = VK_ACCESS_INPUT_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    dependencyGeometryToLighting.srcStageMask =
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+    dependencyGeometryToLighting.dstStageMask =
+        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependencyGeometryToLighting.srcAccessMask =
+        VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    dependencyGeometryToLighting.dstAccessMask =
+        VK_ACCESS_INPUT_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
     VkSubpassDependency dependencyLightingToExternal{};
     dependencyLightingToExternal.srcSubpass = 1;
@@ -764,11 +765,8 @@ void Renderer::createRenderPass() {
     // ---------------------- RenderPass ---------------------------
 
     std::array<VkAttachmentDescription, 5> attachments = {
-        colorAttachment,
-        depthAttachment,
-        gbufferPositionAttachment,
-        gbufferNormalAttachment,
-        gbufferAlbedoAttachment,
+        colorAttachment,         depthAttachment,         gbufferPositionAttachment,
+        gbufferNormalAttachment, gbufferAlbedoAttachment,
     };
     VkRenderPassCreateInfo renderPassCreateInfo{};
     renderPassCreateInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
@@ -849,7 +847,7 @@ void Renderer::createDescriptorSetLayout() {
     uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
     // pImmutableSamplers：用于纹理采样器，此处为UBO，设为nullptr即可
-    // uboLayoutBinding.pImmutableSamplers = nullptr; 
+    // uboLayoutBinding.pImmutableSamplers = nullptr;
 
     // --- 创建描述符集布局 ---
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
@@ -860,7 +858,8 @@ void Renderer::createDescriptorSetLayout() {
 
     // 指向绑定信息数组的指针
     layoutInfo.pBindings = &uboLayoutBinding;
-    if (vkCreateDescriptorSetLayout(device_, &layoutInfo, nullptr, &descriptorSetLayout_) != VK_SUCCESS) {
+    if (vkCreateDescriptorSetLayout(device_, &layoutInfo, nullptr, &descriptorSetLayout_) !=
+        VK_SUCCESS) {
         throw std::runtime_error("vkCreateDescriptorSetLayout failed");
     }
 }
@@ -881,7 +880,8 @@ void Renderer::createLightingDescriptorSetLayout() {
     layoutInfo.bindingCount = static_cast<std::uint32_t>(bindings.size());
     layoutInfo.pBindings = bindings.data();
 
-    if (vkCreateDescriptorSetLayout(device_, &layoutInfo, nullptr, &lightingDescriptorSetLayout_) != VK_SUCCESS) {
+    if (vkCreateDescriptorSetLayout(device_, &layoutInfo, nullptr, &lightingDescriptorSetLayout_) !=
+        VK_SUCCESS) {
         throw std::runtime_error("vkCreateDescriptorSetLayout for lighting failed");
     }
 }
@@ -889,7 +889,7 @@ void Renderer::createLightingDescriptorSetLayout() {
 void Renderer::createGraphicsPipeline() {
     // 定义着色器文件的根目录（通常由构建系统传入宏定义）
     const std::string shaderRoot = VR_SHADER_DIR;
-    
+
     // 读取编译好的SPIR-V二进制文件（顶点着色器和片段着色器）
     std::vector<char> vertShaderCode = readBinaryFile((shaderRoot + "/triangle.vert.spv").c_str());
     std::vector<char> fragShaderCode = readBinaryFile((shaderRoot + "/triangle.frag.spv").c_str());
@@ -901,14 +901,14 @@ void Renderer::createGraphicsPipeline() {
     // --- 配置顶点着色器阶段 ---
     VkPipelineShaderStageCreateInfo vertShaderStageCreateInfo{};
     vertShaderStageCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    vertShaderStageCreateInfo.stage = VK_SHADER_STAGE_VERTEX_BIT; // 指定为顶点着色阶段
-    vertShaderStageCreateInfo.module = vertShaderModule;          // 绑定着色器模块
-    vertShaderStageCreateInfo.pName = "main";                     // 指定入口函数名称
+    vertShaderStageCreateInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;  // 指定为顶点着色阶段
+    vertShaderStageCreateInfo.module = vertShaderModule;           // 绑定着色器模块
+    vertShaderStageCreateInfo.pName = "main";                      // 指定入口函数名称
 
     // --- 配置片段着色器阶段 ---
     VkPipelineShaderStageCreateInfo fragShaderStageCreateInfo{};
     fragShaderStageCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    fragShaderStageCreateInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT; // 指定为片段着色阶段
+    fragShaderStageCreateInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;  // 指定为片段着色阶段
     fragShaderStageCreateInfo.module = fragShaderModule;
     fragShaderStageCreateInfo.pName = "main";
 
@@ -922,8 +922,10 @@ void Renderer::createGraphicsPipeline() {
     // 描述顶点数据的绑定方式和属性格式（位置、颜色、法线等）
     VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
     vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    VkVertexInputBindingDescription bindingDescription = Vertex::getBindingDescription(); // 获取绑定描述（跨度、输入速率等）
-    std::array<VkVertexInputAttributeDescription, 3> attributes = Vertex::getAttributeDescriptions(); // 获取属性描述（偏移量、格式等）
+    VkVertexInputBindingDescription bindingDescription =
+        Vertex::getBindingDescription();  // 获取绑定描述（跨度、输入速率等）
+    std::array<VkVertexInputAttributeDescription, 3> attributes =
+        Vertex::getAttributeDescriptions();  // 获取属性描述（偏移量、格式等）
     vertexInputInfo.vertexBindingDescriptionCount = 1;
     vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
     vertexInputInfo.vertexAttributeDescriptionCount = static_cast<std::uint32_t>(attributes.size());
@@ -933,8 +935,9 @@ void Renderer::createGraphicsPipeline() {
     // 描述如何解释顶点数据以构成图元
     VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
     inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
-    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST; // 设置图元拓扑类型为三角形列表
-    // inputAssembly.primitiveRestartEnable = VK_FALSE; // 注意：通常需要设置此项，默认初始化可能为0/False
+    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;  // 设置图元拓扑类型为三角形列表
+    // inputAssembly.primitiveRestartEnable = VK_FALSE; //
+    // 注意：通常需要设置此项，默认初始化可能为0/False
 
     // --- 配置视口状态 ---
     // 注意：这里只设置了数量，具体的视口和裁剪矩形将在绘制时通过动态状态设置
@@ -946,33 +949,33 @@ void Renderer::createGraphicsPipeline() {
     // --- 配置光栅化状态 ---
     VkPipelineRasterizationStateCreateInfo rasterizer{};
     rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
-    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;       // 多边形填充模式：实心填充
-    rasterizer.lineWidth = 1.0f;                         // 线宽
-    rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;         // 背面剔除
-    rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE; // 设定逆时针方向为正面
+    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;           // 多边形填充模式：实心填充
+    rasterizer.lineWidth = 1.0f;                             // 线宽
+    rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;             // 背面剔除
+    rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;  // 设定逆时针方向为正面
 
     // --- 配置多重采样状态 ---
     // 这里关闭了多重采样抗锯齿（MSAA）
     VkPipelineMultisampleStateCreateInfo multisampling{};
     multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT; // 单采样点
+    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;  // 单采样点
 
     // --- 配置深度/模板测试状态 ---
     VkPipelineDepthStencilStateCreateInfo depthStencil{};
     depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-    depthStencil.depthTestEnable = VK_TRUE;              // 开启深度测试
-    depthStencil.depthWriteEnable = VK_TRUE;             // 开启深度写入
-    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;    // 深度比较操作：更近的物体通过测试
-    depthStencil.depthBoundsTestEnable = VK_FALSE;       // 关闭深度边界测试
-    depthStencil.stencilTestEnable = VK_FALSE;           // 关闭模板测试
+    depthStencil.depthTestEnable = VK_TRUE;            // 开启深度测试
+    depthStencil.depthWriteEnable = VK_TRUE;           // 开启深度写入
+    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;  // 深度比较操作：更近的物体通过测试
+    depthStencil.depthBoundsTestEnable = VK_FALSE;     // 关闭深度边界测试
+    depthStencil.stencilTestEnable = VK_FALSE;         // 关闭模板测试
 
     // --- 配置颜色混合状态 ---
     // 定义单个颜色附件的混合方式
     VkPipelineColorBlendAttachmentState colorBlendAttachment{};
-    colorBlendAttachment.colorWriteMask =
-        VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                                          VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
     // 此处通常还有 blendEnable 等设置，默认为关闭混合（直接覆盖）
-    
+
     // 针对多渲染目标（MRT），这里假设有3个颜色附件，使用相同的混合设置
     std::array<VkPipelineColorBlendAttachmentState, 3> colorBlendAttachments = {
         colorBlendAttachment,
@@ -989,8 +992,8 @@ void Renderer::createGraphicsPipeline() {
     // --- 配置动态状态 ---
     // 允许在绘图命令中动态设置的部分管线状态，无需重建管线
     std::array<VkDynamicState, 2> dynamicStates = {
-        VK_DYNAMIC_STATE_VIEWPORT, // 动态视口
-        VK_DYNAMIC_STATE_SCISSOR,  // 动态裁剪矩形
+        VK_DYNAMIC_STATE_VIEWPORT,  // 动态视口
+        VK_DYNAMIC_STATE_SCISSOR,   // 动态裁剪矩形
     };
 
     VkPipelineDynamicStateCreateInfo dynamicState{};
@@ -1002,32 +1005,35 @@ void Renderer::createGraphicsPipeline() {
     // 定义了着色器访问的资源（如Uniform Buffer, Sampler等）的布局
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = 1;                         // 绑定一个描述符集布局
+    pipelineLayoutInfo.setLayoutCount = 1;  // 绑定一个描述符集布局
     pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout_;
 
-    if (vkCreatePipelineLayout(device_, &pipelineLayoutInfo, nullptr, &pipelineLayout_) != VK_SUCCESS) {
+    if (vkCreatePipelineLayout(device_, &pipelineLayoutInfo, nullptr, &pipelineLayout_) !=
+        VK_SUCCESS) {
         throw std::runtime_error("vkCreatePipelineLayout failed");
     }
 
     // --- 创建图形管线 ---
     VkGraphicsPipelineCreateInfo pipelineInfo{};
     pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    pipelineInfo.stageCount = 2;                       // 着色器阶段数量
-    pipelineInfo.pStages = shaderStages;               // 着色器阶段信息
-    pipelineInfo.pVertexInputState = &vertexInputInfo; // 顶点输入
-    pipelineInfo.pInputAssemblyState = &inputAssembly; // 输入装配
-    pipelineInfo.pViewportState = &viewportState;      // 视口状态
-    pipelineInfo.pRasterizationState = &rasterizer;    // 光栅化
-    pipelineInfo.pMultisampleState = &multisampling;   // 多重采样
-    pipelineInfo.pDepthStencilState = &depthStencil;   // 深度模板
-    pipelineInfo.pColorBlendState = &colorBlending;    // 颜色混合
-    pipelineInfo.pDynamicState = &dynamicState;        // 动态状态
-    pipelineInfo.layout = pipelineLayout_;             // 管线布局
-    pipelineInfo.renderPass = renderPass_;             // 兼容的渲染通道
-    pipelineInfo.subpass = 0;                          // 使用的子通道索引
+    pipelineInfo.stageCount = 2;                        // 着色器阶段数量
+    pipelineInfo.pStages = shaderStages;                // 着色器阶段信息
+    pipelineInfo.pVertexInputState = &vertexInputInfo;  // 顶点输入
+    pipelineInfo.pInputAssemblyState = &inputAssembly;  // 输入装配
+    pipelineInfo.pViewportState = &viewportState;       // 视口状态
+    pipelineInfo.pRasterizationState = &rasterizer;     // 光栅化
+    pipelineInfo.pMultisampleState = &multisampling;    // 多重采样
+    pipelineInfo.pDepthStencilState = &depthStencil;    // 深度模板
+    pipelineInfo.pColorBlendState = &colorBlending;     // 颜色混合
+    pipelineInfo.pDynamicState = &dynamicState;         // 动态状态
+    pipelineInfo.layout = pipelineLayout_;              // 管线布局
+    pipelineInfo.renderPass = renderPass_;              // 兼容的渲染通道
+    pipelineInfo.subpass = 0;                           // 使用的子通道索引
 
     // 调用API创建管线
-    if (vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &graphicsPipeline_) != VK_SUCCESS) {
+    if (vkCreateGraphicsPipelines(
+            device_, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &graphicsPipeline_
+        ) != VK_SUCCESS) {
         throw std::runtime_error("vkCreateGraphicsPipelines failed");
     }
 
@@ -1039,8 +1045,10 @@ void Renderer::createGraphicsPipeline() {
 
 void Renderer::createLightingPipeline() {
     const std::string shaderRoot = VR_SHADER_DIR;
-    std::vector<char> vertShaderCode = readBinaryFile((shaderRoot + "/deferred_lighting.vert.spv").c_str());
-    std::vector<char> fragShaderCode = readBinaryFile((shaderRoot + "/deferred_lighting.frag.spv").c_str());
+    std::vector<char> vertShaderCode =
+        readBinaryFile((shaderRoot + "/deferred_lighting.vert.spv").c_str());
+    std::vector<char> fragShaderCode =
+        readBinaryFile((shaderRoot + "/deferred_lighting.frag.spv").c_str());
 
     VkShaderModule vertShaderModule = createShaderModule(vertShaderCode);
     VkShaderModule fragShaderModule = createShaderModule(fragShaderCode);
@@ -1088,8 +1096,8 @@ void Renderer::createLightingPipeline() {
     depthStencil.depthWriteEnable = VK_FALSE;
 
     VkPipelineColorBlendAttachmentState colorBlendAttachment{};
-    colorBlendAttachment.colorWriteMask =
-        VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                                          VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
 
     VkPipelineColorBlendStateCreateInfo colorBlending{};
     colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
@@ -1122,7 +1130,8 @@ void Renderer::createLightingPipeline() {
     pipelineLayoutInfo.pushConstantRangeCount = 1;
     pipelineLayoutInfo.pPushConstantRanges = &debugModePushConstantRange;
 
-    if (vkCreatePipelineLayout(device_, &pipelineLayoutInfo, nullptr, &lightingPipelineLayout_) != VK_SUCCESS) {
+    if (vkCreatePipelineLayout(device_, &pipelineLayoutInfo, nullptr, &lightingPipelineLayout_) !=
+        VK_SUCCESS) {
         throw std::runtime_error("vkCreatePipelineLayout for lighting failed");
     }
 
@@ -1142,7 +1151,9 @@ void Renderer::createLightingPipeline() {
     pipelineInfo.renderPass = renderPass_;
     pipelineInfo.subpass = 1;
 
-    if (vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &lightingPipeline_) != VK_SUCCESS) {
+    if (vkCreateGraphicsPipelines(
+            device_, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &lightingPipeline_
+        ) != VK_SUCCESS) {
         throw std::runtime_error("vkCreateGraphicsPipelines for lighting failed");
     }
 
@@ -1154,14 +1165,9 @@ void Renderer::createDepthResources() {
     depthFormat_ = findDepthFormat();
 
     createImage(
-        swapchainExtent_.width,
-        swapchainExtent_.height,
-        depthFormat_,
-        VK_IMAGE_TILING_OPTIMAL,
-        VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-        depthImage_,
-        depthImageMemory_
+        swapchainExtent_.width, swapchainExtent_.height, depthFormat_, VK_IMAGE_TILING_OPTIMAL,
+        VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+        depthImage_, depthImageMemory_
     );
 
     VkImageAspectFlags aspectFlags = VK_IMAGE_ASPECT_DEPTH_BIT;
@@ -1173,16 +1179,12 @@ void Renderer::createDepthResources() {
 
 void Renderer::createGBufferResources() {
     createImage(
-        swapchainExtent_.width,
-        swapchainExtent_.height,
-        swapchainImageFormat_,
-        VK_IMAGE_TILING_OPTIMAL,
-        VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-        sceneColorImage_,
-        sceneColorImageMemory_
+        swapchainExtent_.width, swapchainExtent_.height, swapchainImageFormat_,
+        VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, sceneColorImage_, sceneColorImageMemory_
     );
-    sceneColorImageView_ = createImageView(sceneColorImage_, swapchainImageFormat_, VK_IMAGE_ASPECT_COLOR_BIT);
+    sceneColorImageView_ =
+        createImageView(sceneColorImage_, swapchainImageFormat_, VK_IMAGE_ASPECT_COLOR_BIT);
 
     VkSamplerCreateInfo samplerInfo{};
     samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
@@ -1200,40 +1202,31 @@ void Renderer::createGBufferResources() {
     }
 
     createImage(
-        swapchainExtent_.width,
-        swapchainExtent_.height,
-        gbufferPositionFormat_,
+        swapchainExtent_.width, swapchainExtent_.height, gbufferPositionFormat_,
         VK_IMAGE_TILING_OPTIMAL,
         VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT,
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-        gbufferPositionImage_,
-        gbufferPositionImageMemory_
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, gbufferPositionImage_, gbufferPositionImageMemory_
     );
-    gbufferPositionImageView_ = createImageView(gbufferPositionImage_, gbufferPositionFormat_, VK_IMAGE_ASPECT_COLOR_BIT);
+    gbufferPositionImageView_ =
+        createImageView(gbufferPositionImage_, gbufferPositionFormat_, VK_IMAGE_ASPECT_COLOR_BIT);
 
     createImage(
-        swapchainExtent_.width,
-        swapchainExtent_.height,
-        gbufferNormalFormat_,
+        swapchainExtent_.width, swapchainExtent_.height, gbufferNormalFormat_,
         VK_IMAGE_TILING_OPTIMAL,
         VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT,
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-        gbufferNormalImage_,
-        gbufferNormalImageMemory_
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, gbufferNormalImage_, gbufferNormalImageMemory_
     );
-    gbufferNormalImageView_ = createImageView(gbufferNormalImage_, gbufferNormalFormat_, VK_IMAGE_ASPECT_COLOR_BIT);
+    gbufferNormalImageView_ =
+        createImageView(gbufferNormalImage_, gbufferNormalFormat_, VK_IMAGE_ASPECT_COLOR_BIT);
 
     createImage(
-        swapchainExtent_.width,
-        swapchainExtent_.height,
-        gbufferAlbedoFormat_,
+        swapchainExtent_.width, swapchainExtent_.height, gbufferAlbedoFormat_,
         VK_IMAGE_TILING_OPTIMAL,
         VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT,
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-        gbufferAlbedoImage_,
-        gbufferAlbedoImageMemory_
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, gbufferAlbedoImage_, gbufferAlbedoImageMemory_
     );
-    gbufferAlbedoImageView_ = createImageView(gbufferAlbedoImage_, gbufferAlbedoFormat_, VK_IMAGE_ASPECT_COLOR_BIT);
+    gbufferAlbedoImageView_ =
+        createImageView(gbufferAlbedoImage_, gbufferAlbedoFormat_, VK_IMAGE_ASPECT_COLOR_BIT);
 }
 
 void Renderer::createFramebuffers() {
@@ -1245,23 +1238,23 @@ void Renderer::createFramebuffers() {
     // 每次渲染时会获取到一个 swapchain 索引，从而能够访问到对应的 FrameBuffer
     {
         std::array<VkImageView, 5> sceneAttachments = {
-            sceneColorImageView_,
-            depthImageView_,
-            gbufferPositionImageView_,
-            gbufferNormalImageView_,
-            gbufferAlbedoImageView_,
+            sceneColorImageView_,    depthImageView_,         gbufferPositionImageView_,
+            gbufferNormalImageView_, gbufferAlbedoImageView_,
         };
 
         VkFramebufferCreateInfo sceneFramebufferCreateInfo{};
         sceneFramebufferCreateInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
         sceneFramebufferCreateInfo.renderPass = renderPass_;
-        sceneFramebufferCreateInfo.attachmentCount = static_cast<std::uint32_t>(sceneAttachments.size());
+        sceneFramebufferCreateInfo.attachmentCount =
+            static_cast<std::uint32_t>(sceneAttachments.size());
         sceneFramebufferCreateInfo.pAttachments = sceneAttachments.data();
         sceneFramebufferCreateInfo.width = swapchainExtent_.width;
         sceneFramebufferCreateInfo.height = swapchainExtent_.height;
         sceneFramebufferCreateInfo.layers = 1;
 
-        if (vkCreateFramebuffer(device_, &sceneFramebufferCreateInfo, nullptr, &sceneFramebuffer_) != VK_SUCCESS) {
+        if (vkCreateFramebuffer(
+                device_, &sceneFramebufferCreateInfo, nullptr, &sceneFramebuffer_
+            ) != VK_SUCCESS) {
             throw std::runtime_error("vkCreateFramebuffer for scene failed");
         }
     }
@@ -1279,7 +1272,9 @@ void Renderer::createFramebuffers() {
         uiFramebufferCreateInfo.height = swapchainExtent_.height;
         uiFramebufferCreateInfo.layers = 1;
 
-        if (vkCreateFramebuffer(device_, &uiFramebufferCreateInfo, nullptr, &swapchainFramebuffers_[i]) != VK_SUCCESS) {
+        if (vkCreateFramebuffer(
+                device_, &uiFramebufferCreateInfo, nullptr, &swapchainFramebuffers_[i]
+            ) != VK_SUCCESS) {
             throw std::runtime_error("vkCreateFramebuffer for UI failed");
         }
     }
@@ -1302,17 +1297,21 @@ void Renderer::loadMeshVertices() {
     meshVertices_.clear();
     meshIndices_.clear();
 
-    std::string filePath = meshInputPath_.empty() ? std::string(VR_ASSET_DIR) + "/models/basic_mesh.obj" : meshInputPath_;
+    std::string filePath = meshInputPath_.empty()
+                               ? std::string(VR_ASSET_DIR) + "/models/basic_mesh.obj"
+                               : meshInputPath_;
 
     MeshInputData meshData;
     if (loadObjMesh(filePath, meshData)) {
         meshVertices_.reserve(meshData.vertices.size());
         for (const auto& vertexInput : meshData.vertices) {
-            meshVertices_.push_back(Vertex{
-                vertexInput.position,
-                vertexInput.normal,
-                vertexInput.uv,
-            });
+            meshVertices_.push_back(
+                Vertex{
+                    vertexInput.position,
+                    vertexInput.normal,
+                    vertexInput.uv,
+                }
+            );
         }
         meshIndices_ = meshData.indices;
     }
@@ -1460,10 +1459,8 @@ void Renderer::createVertexBuffer() {
 
     VkDeviceSize bufferSize = sizeof(Vertex) * meshVertices_.size();
     createBuffer(
-        bufferSize,
-        VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-        vertexBuffer_,
+        bufferSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, vertexBuffer_,
         vertexBufferMemory_
     );
 
@@ -1476,10 +1473,8 @@ void Renderer::createVertexBuffer() {
 void Renderer::createIndexBuffer() {
     VkDeviceSize bufferSize = sizeof(std::uint32_t) * meshIndices_.size();
     createBuffer(
-        bufferSize,
-        VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-        indexBuffer_,
+        bufferSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, indexBuffer_,
         indexBufferMemory_
     );
 
@@ -1494,11 +1489,9 @@ void Renderer::createUniformBuffers() {
 
     for (std::uint32_t i = 0; i < kMaxFramesInFlight; ++i) {
         createBuffer(
-            bufferSize,
-            VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+            bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-            uniformBuffers_[i],
-            uniformBuffersMemory_[i]
+            uniformBuffers_[i], uniformBuffersMemory_[i]
         );
     }
 }
@@ -1563,7 +1556,8 @@ void Renderer::createLightingDescriptorPool() {
     poolInfo.poolSizeCount = static_cast<std::uint32_t>(poolSizes.size());
     poolInfo.pPoolSizes = poolSizes.data();
 
-    if (vkCreateDescriptorPool(device_, &poolInfo, nullptr, &lightingDescriptorPool_) != VK_SUCCESS) {
+    if (vkCreateDescriptorPool(device_, &poolInfo, nullptr, &lightingDescriptorPool_) !=
+        VK_SUCCESS) {
         throw std::runtime_error("vkCreateDescriptorPool for lighting failed");
     }
 }
@@ -1599,7 +1593,9 @@ void Renderer::updateLightingDescriptorSet() {
         writes[i].pImageInfo = &imageInfos[i];
     }
 
-    vkUpdateDescriptorSets(device_, static_cast<std::uint32_t>(writes.size()), writes.data(), 0, nullptr);
+    vkUpdateDescriptorSets(
+        device_, static_cast<std::uint32_t>(writes.size()), writes.data(), 0, nullptr
+    );
 }
 
 void Renderer::createImGuiDescriptorPool() {
@@ -1647,9 +1643,7 @@ void Renderer::initImGui() {
 
     ImGui_ImplVulkan_Init(&initInfo);
     sceneTextureId_ = ImGui_ImplVulkan_AddTexture(
-        sceneColorSampler_,
-        sceneColorImageView_,
-        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+        sceneColorSampler_, sceneColorImageView_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
     );
     appendOutput("ImGui initialized");
     appendOutput("Docking enabled");
@@ -1685,7 +1679,9 @@ void Renderer::buildGui() {
     sceneViewportHeight_ = static_cast<int>(swapchainExtent_.height);
 
     ImGui::PushStyleColor(ImGuiCol_DockingEmptyBg, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
-    ImGui::DockSpaceOverViewport(0, ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
+    ImGui::DockSpaceOverViewport(
+        0, ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode
+    );
     ImGui::PopStyleColor();
 
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
@@ -1730,8 +1726,11 @@ void Renderer::buildGui() {
     ImGui::SliderFloat("Yaw", &modelYawRadians_, -3.14f, 3.14f);
     ImGui::SliderFloat("Pitch", &modelPitchRadians_, -3.14f, 3.14f);
     const char* debugViewItems[] = {"Final", "Position", "Normal", "Albedo"};
-    lightingDebugMode_ = std::clamp(lightingDebugMode_, 0, static_cast<int>(IM_ARRAYSIZE(debugViewItems) - 1));
-    if (ImGui::Combo("Deferred Debug", &lightingDebugMode_, debugViewItems, IM_ARRAYSIZE(debugViewItems))) {
+    lightingDebugMode_ =
+        std::clamp(lightingDebugMode_, 0, static_cast<int>(IM_ARRAYSIZE(debugViewItems) - 1));
+    if (ImGui::Combo(
+            "Deferred Debug", &lightingDebugMode_, debugViewItems, IM_ARRAYSIZE(debugViewItems)
+        )) {
         appendOutput(std::string("Deferred debug view: ") + debugViewItems[lightingDebugMode_]);
     }
     ImGui::SliderInt("Deferred Light Count", &deferredLightCount_, 1, 32);
@@ -1764,7 +1763,9 @@ void Renderer::buildGui() {
         appendOutput("Camera/model transform reset");
     }
     const float currentFrameTimeMs = 1000.0f / std::max(ImGui::GetIO().Framerate, 1.0f);
-    smoothedFrameTimeMs_ = (smoothedFrameTimeMs_ <= 0.0f) ? currentFrameTimeMs : (smoothedFrameTimeMs_ * 0.9f + currentFrameTimeMs * 0.1f);
+    smoothedFrameTimeMs_ = (smoothedFrameTimeMs_ <= 0.0f)
+                               ? currentFrameTimeMs
+                               : (smoothedFrameTimeMs_ * 0.9f + currentFrameTimeMs * 0.1f);
     smoothedFps_ = (smoothedFrameTimeMs_ > 1e-3f) ? (1000.0f / smoothedFrameTimeMs_) : 0.0f;
     ImGui::Text("Frame time %.3f ms (%.1f FPS)", currentFrameTimeMs, ImGui::GetIO().Framerate);
     ImGui::Text("Smoothed %.3f ms (%.1f FPS)", smoothedFrameTimeMs_, smoothedFps_);
@@ -1778,7 +1779,9 @@ void Renderer::buildGui() {
     ImGui::Checkbox("Auto Scroll", &autoScrollOutput_);
     ImGui::Separator();
 
-    ImGui::BeginChild("OutputScrollRegion", ImVec2(0.0f, 0.0f), false, ImGuiWindowFlags_HorizontalScrollbar);
+    ImGui::BeginChild(
+        "OutputScrollRegion", ImVec2(0.0f, 0.0f), false, ImGuiWindowFlags_HorizontalScrollbar
+    );
     for (const std::string& line : outputLines_) {
         ImGui::TextUnformatted(line.c_str());
     }
@@ -1819,7 +1822,8 @@ void Renderer::createSyncObjects() {
     fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
     for (std::uint32_t i = 0; i < kMaxFramesInFlight; ++i) {
-        if (vkCreateSemaphore(device_, &semaphoreInfo, nullptr, &imageAvailableSemaphores_[i]) != VK_SUCCESS ||
+        if (vkCreateSemaphore(device_, &semaphoreInfo, nullptr, &imageAvailableSemaphores_[i]) !=
+                VK_SUCCESS ||
             vkCreateFence(device_, &fenceInfo, nullptr, &inFlightFences_[i]) != VK_SUCCESS) {
             throw std::runtime_error("failed to create synchronization objects");
         }
@@ -1827,7 +1831,8 @@ void Renderer::createSyncObjects() {
 
     renderFinishedSemaphores_.resize(swapchainImages_.size(), VK_NULL_HANDLE);
     for (std::size_t i = 0; i < renderFinishedSemaphores_.size(); ++i) {
-        if (vkCreateSemaphore(device_, &semaphoreInfo, nullptr, &renderFinishedSemaphores_[i]) != VK_SUCCESS) {
+        if (vkCreateSemaphore(device_, &semaphoreInfo, nullptr, &renderFinishedSemaphores_[i]) !=
+            VK_SUCCESS) {
             throw std::runtime_error("failed to create render-finished semaphore");
         }
     }
@@ -1844,12 +1849,13 @@ void Renderer::updateUniformBuffer(std::uint32_t frameIndex, float timeSeconds) 
     model = glm::rotate(model, modelPitchRadians_, glm::vec3(1.0f, 0.0f, 0.0f));
 
     ubo.model = model;
-    ubo.view = glm::lookAt(glm::vec3(0.0f, 0.0f, cameraDistance_), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+    ubo.view = glm::lookAt(
+        glm::vec3(0.0f, 0.0f, cameraDistance_), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f)
+    );
     ubo.projection = glm::perspective(
         glm::radians(45.0f),
         static_cast<float>(swapchainExtent_.width) / static_cast<float>(swapchainExtent_.height),
-        0.1f,
-        std::max(100.0f, sceneRadius_ * 50.0f)
+        0.1f, std::max(100.0f, sceneRadius_ * 50.0f)
     );
     ubo.projection[1][1] *= -1.0f;
 
@@ -1864,11 +1870,7 @@ void Renderer::drawFrame() {
 
     std::uint32_t imageIndex = 0;
     VkResult acquireResult = vkAcquireNextImageKHR(
-        device_,
-        swapchain_,
-        UINT64_MAX,
-        imageAvailableSemaphores_[currentFrame_],
-        VK_NULL_HANDLE,
+        device_, swapchain_, UINT64_MAX, imageAvailableSemaphores_[currentFrame_], VK_NULL_HANDLE,
         &imageIndex
     );
 
@@ -1891,7 +1893,8 @@ void Renderer::drawFrame() {
 
     static const auto startTime = std::chrono::high_resolution_clock::now();
     const auto now = std::chrono::high_resolution_clock::now();
-    float timeSeconds = std::chrono::duration<float, std::chrono::seconds::period>(now - startTime).count();
+    float timeSeconds =
+        std::chrono::duration<float, std::chrono::seconds::period>(now - startTime).count();
     static float lastTimeSeconds = timeSeconds;
     const float deltaSeconds = std::max(0.0f, timeSeconds - lastTimeSeconds);
     lastTimeSeconds = timeSeconds;
@@ -1902,8 +1905,8 @@ void Renderer::drawFrame() {
     if (perfReportAccumulatorSeconds_ >= 2.0f) {
         perfReportAccumulatorSeconds_ = 0.0f;
         appendOutput(
-            "Stage3 Perf baseline: " + std::to_string(smoothedFrameTimeMs_) +
-            " ms / " + std::to_string(smoothedFps_) + " FPS"
+            "Stage3 Perf baseline: " + std::to_string(smoothedFrameTimeMs_) + " ms / " +
+            std::to_string(smoothedFps_) + " FPS"
         );
     }
     updateUniformBuffer(currentFrame_, timeSeconds);
@@ -1924,7 +1927,8 @@ void Renderer::drawFrame() {
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = signalSemaphores;
 
-    if (vkQueueSubmit(graphicsQueue_, 1, &submitInfo, inFlightFences_[currentFrame_]) != VK_SUCCESS) {
+    if (vkQueueSubmit(graphicsQueue_, 1, &submitInfo, inFlightFences_[currentFrame_]) !=
+        VK_SUCCESS) {
         throw std::runtime_error("vkQueueSubmit failed");
     }
 
@@ -1939,7 +1943,8 @@ void Renderer::drawFrame() {
     presentInfo.pImageIndices = &imageIndex;
 
     VkResult presentResult = vkQueuePresentKHR(presentQueue_, &presentInfo);
-    if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR || framebufferResized_) {
+    if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR ||
+        framebufferResized_) {
         framebufferResized_ = false;
         recreateSwapchain();
     } else if (presentResult != VK_SUCCESS) {
@@ -1995,14 +2000,8 @@ void Renderer::recordCommandBuffer(VkCommandBuffer commandBuffer, std::uint32_t 
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
     vkCmdBindIndexBuffer(commandBuffer, indexBuffer_, 0, VK_INDEX_TYPE_UINT32);
     vkCmdBindDescriptorSets(
-        commandBuffer,
-        VK_PIPELINE_BIND_POINT_GRAPHICS,
-        pipelineLayout_,
-        0,
-        1,
-        &descriptorSets_[currentFrame_],
-        0,
-        nullptr
+        commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_, 0, 1,
+        &descriptorSets_[currentFrame_], 0, nullptr
     );
 
     vkCmdDrawIndexed(commandBuffer, static_cast<std::uint32_t>(meshIndices_.size()), 1, 0, 0, 0);
@@ -2010,14 +2009,8 @@ void Renderer::recordCommandBuffer(VkCommandBuffer commandBuffer, std::uint32_t 
 
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, lightingPipeline_);
     vkCmdBindDescriptorSets(
-        commandBuffer,
-        VK_PIPELINE_BIND_POINT_GRAPHICS,
-        lightingPipelineLayout_,
-        0,
-        1,
-        &lightingDescriptorSet_,
-        0,
-        nullptr
+        commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, lightingPipelineLayout_, 0, 1,
+        &lightingDescriptorSet_, 0, nullptr
     );
     LightingPushConstants lightingPushConstants{};
     lightingPushConstants.debugMode = lightingDebugMode_;
@@ -2031,12 +2024,8 @@ void Renderer::recordCommandBuffer(VkCommandBuffer commandBuffer, std::uint32_t 
     lightingPushConstants.materialTextureWeight = useProceduralMaterialMaps_ ? 1.0f : 0.0f;
     lightingPushConstants.iblIntensity = std::max(0.0f, iblIntensity_);
     vkCmdPushConstants(
-        commandBuffer,
-        lightingPipelineLayout_,
-        VK_SHADER_STAGE_FRAGMENT_BIT,
-        0,
-        sizeof(LightingPushConstants),
-        &lightingPushConstants
+        commandBuffer, lightingPipelineLayout_, VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+        sizeof(LightingPushConstants), &lightingPushConstants
     );
     vkCmdDraw(commandBuffer, 3, 1, 0, 0);
     vkCmdEndRenderPass(commandBuffer);
@@ -2086,9 +2075,7 @@ void Renderer::recreateSwapchain() {
         sceneTextureId_ = nullptr;
     }
     sceneTextureId_ = ImGui_ImplVulkan_AddTexture(
-        sceneColorSampler_,
-        sceneColorImageView_,
-        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+        sceneColorSampler_, sceneColorImageView_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
     );
     ImGui_ImplVulkan_SetMinImageCount(swapchainMinImageCount_);
     appendOutput("Swapchain recreated");
@@ -2102,7 +2089,8 @@ void Renderer::recreateSwapchain() {
     }
     renderFinishedSemaphores_.assign(swapchainImages_.size(), VK_NULL_HANDLE);
     for (std::size_t i = 0; i < renderFinishedSemaphores_.size(); ++i) {
-        if (vkCreateSemaphore(device_, &semaphoreInfo, nullptr, &renderFinishedSemaphores_[i]) != VK_SUCCESS) {
+        if (vkCreateSemaphore(device_, &semaphoreInfo, nullptr, &renderFinishedSemaphores_[i]) !=
+            VK_SUCCESS) {
             throw std::runtime_error("failed to recreate render-finished semaphore");
         }
     }
@@ -2272,22 +2260,29 @@ Renderer::SwapchainSupportDetails Renderer::querySwapchainSupport(VkPhysicalDevi
     vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface_, &formatCount, nullptr);
     if (formatCount > 0) {
         details.formats.resize(formatCount);
-        vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface_, &formatCount, details.formats.data());
+        vkGetPhysicalDeviceSurfaceFormatsKHR(
+            device, surface_, &formatCount, details.formats.data()
+        );
     }
 
     std::uint32_t presentModeCount = 0;
     vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface_, &presentModeCount, nullptr);
     if (presentModeCount > 0) {
         details.presentModes.resize(presentModeCount);
-        vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface_, &presentModeCount, details.presentModes.data());
+        vkGetPhysicalDeviceSurfacePresentModesKHR(
+            device, surface_, &presentModeCount, details.presentModes.data()
+        );
     }
 
     return details;
 }
 
-VkSurfaceFormatKHR Renderer::chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& formats) const {
+VkSurfaceFormatKHR Renderer::chooseSwapSurfaceFormat(
+    const std::vector<VkSurfaceFormatKHR>& formats
+) const {
     for (const auto& format : formats) {
-        if (format.format == VK_FORMAT_B8G8R8A8_SRGB && format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+        if (format.format == VK_FORMAT_B8G8R8A8_SRGB &&
+            format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
             return format;
         }
     }
@@ -2295,7 +2290,9 @@ VkSurfaceFormatKHR Renderer::chooseSwapSurfaceFormat(const std::vector<VkSurface
     return formats.front();
 }
 
-VkPresentModeKHR Renderer::chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& presentModes) const {
+VkPresentModeKHR Renderer::chooseSwapPresentMode(
+    const std::vector<VkPresentModeKHR>& presentModes
+) const {
     for (const auto& presentMode : presentModes) {
         if (presentMode == VK_PRESENT_MODE_MAILBOX_KHR) {
             return presentMode;
@@ -2315,8 +2312,12 @@ VkExtent2D Renderer::chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabiliti
         windowHeight_,
     };
 
-    actualExtent.width = std::clamp(actualExtent.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
-    actualExtent.height = std::clamp(actualExtent.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
+    actualExtent.width = std::clamp(
+        actualExtent.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width
+    );
+    actualExtent.height = std::clamp(
+        actualExtent.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height
+    );
 
     return actualExtent;
 }
@@ -2339,7 +2340,9 @@ bool Renderer::checkDeviceExtensionSupport(VkPhysicalDevice device) const {
     vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, nullptr);
 
     std::vector<VkExtensionProperties> availableExtensions(extensionCount);
-    vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, availableExtensions.data());
+    vkEnumerateDeviceExtensionProperties(
+        device, nullptr, &extensionCount, availableExtensions.data()
+    );
 
     std::set<std::string> requiredExtensions(kDeviceExtensions.begin(), kDeviceExtensions.end());
     for (const auto& extension : availableExtensions) {
@@ -2350,19 +2353,19 @@ bool Renderer::checkDeviceExtensionSupport(VkPhysicalDevice device) const {
 }
 
 VkFormat Renderer::findSupportedFormat(
-    const std::vector<VkFormat>& candidates,
-    VkImageTiling tiling,
-    VkFormatFeatureFlags features
+    const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features
 ) const {
     for (VkFormat format : candidates) {
         VkFormatProperties properties;
         vkGetPhysicalDeviceFormatProperties(physicalDevice_, format, &properties);
 
-        if (tiling == VK_IMAGE_TILING_LINEAR && (properties.linearTilingFeatures & features) == features) {
+        if (tiling == VK_IMAGE_TILING_LINEAR &&
+            (properties.linearTilingFeatures & features) == features) {
             return format;
         }
 
-        if (tiling == VK_IMAGE_TILING_OPTIMAL && (properties.optimalTilingFeatures & features) == features) {
+        if (tiling == VK_IMAGE_TILING_OPTIMAL &&
+            (properties.optimalTilingFeatures & features) == features) {
             return format;
         }
     }
@@ -2373,8 +2376,7 @@ VkFormat Renderer::findSupportedFormat(
 VkFormat Renderer::findDepthFormat() const {
     return findSupportedFormat(
         {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT},
-        VK_IMAGE_TILING_OPTIMAL,
-        VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT
+        VK_IMAGE_TILING_OPTIMAL, VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT
     );
 }
 
@@ -2392,7 +2394,9 @@ std::vector<char> Renderer::readBinaryFile(const char* filePath) {
     return buffer;
 }
 
-std::uint32_t Renderer::findMemoryType(std::uint32_t typeFilter, VkMemoryPropertyFlags properties) const {
+std::uint32_t Renderer::findMemoryType(
+    std::uint32_t typeFilter, VkMemoryPropertyFlags properties
+) const {
     VkPhysicalDeviceMemoryProperties memoryProperties;
     vkGetPhysicalDeviceMemoryProperties(physicalDevice_, &memoryProperties);
 
@@ -2407,10 +2411,7 @@ std::uint32_t Renderer::findMemoryType(std::uint32_t typeFilter, VkMemoryPropert
 }
 
 void Renderer::createBuffer(
-    VkDeviceSize size,
-    VkBufferUsageFlags usage,
-    VkMemoryPropertyFlags properties,
-    VkBuffer& buffer,
+    VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer,
     VkDeviceMemory& bufferMemory
 ) {
     VkBufferCreateInfo bufferInfo{};
@@ -2439,13 +2440,8 @@ void Renderer::createBuffer(
 }
 
 void Renderer::createImage(
-    std::uint32_t width,
-    std::uint32_t height,
-    VkFormat format,
-    VkImageTiling tiling,
-    VkImageUsageFlags usage,
-    VkMemoryPropertyFlags properties,
-    VkImage& image,
+    std::uint32_t width, std::uint32_t height, VkFormat format, VkImageTiling tiling,
+    VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage& image,
     VkDeviceMemory& imageMemory
 ) {
     VkImageCreateInfo imageInfo{};
@@ -2454,7 +2450,7 @@ void Renderer::createImage(
     imageInfo.extent.width = width;
     imageInfo.extent.height = height;
     imageInfo.extent.depth = 1;
-    imageInfo.mipLevels = 1; // 当前不支持 mipmap
+    imageInfo.mipLevels = 1;  // 当前不支持 mipmap
     imageInfo.arrayLayers = 1;
     imageInfo.format = format;
     imageInfo.tiling = tiling;
@@ -2482,7 +2478,9 @@ void Renderer::createImage(
     vkBindImageMemory(device_, image, imageMemory, 0);
 }
 
-VkImageView Renderer::createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags) const {
+VkImageView Renderer::createImageView(
+    VkImage image, VkFormat format, VkImageAspectFlags aspectFlags
+) const {
     VkImageViewCreateInfo viewInfo{};
     viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     viewInfo.image = image;
@@ -2535,12 +2533,9 @@ LRESULT CALLBACK Renderer::WindowProc(HWND hWnd, UINT message, WPARAM wParam, LP
 }
 
 LRESULT Renderer::handleWindowMessage(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
-    const bool isMouseMessage = message == WM_RBUTTONDOWN ||
-                                message == WM_RBUTTONUP ||
-                                message == WM_LBUTTONDOWN ||
-                                message == WM_LBUTTONUP ||
-                                message == WM_MOUSEMOVE ||
-                                message == WM_MOUSEWHEEL;
+    const bool isMouseMessage = message == WM_RBUTTONDOWN || message == WM_RBUTTONUP ||
+                                message == WM_LBUTTONDOWN || message == WM_LBUTTONUP ||
+                                message == WM_MOUSEMOVE || message == WM_MOUSEWHEEL;
 
     bool imguiHandled = false;
     bool uiCapturingMouse = false;
@@ -2555,76 +2550,78 @@ LRESULT Renderer::handleWindowMessage(HWND hWnd, UINT message, WPARAM wParam, LP
     }
 
     switch (message) {
-    case WM_CLOSE:
-        windowRunning_ = false;
-        PostQuitMessage(0);
-        return 0;
-    case WM_SIZE:
-        windowWidth_ = static_cast<unsigned int>(LOWORD(lParam));
-        windowHeight_ = static_cast<unsigned int>(HIWORD(lParam));
-        if (wParam != SIZE_MINIMIZED) {
-            framebufferResized_ = true;
-        }
-        return 0;
-    case WM_RBUTTONDOWN:
-        if (uiCapturingMouse && !sceneAllowsMouseInteraction) {
+        case WM_CLOSE:
+            windowRunning_ = false;
+            PostQuitMessage(0);
+            return 0;
+        case WM_SIZE:
+            windowWidth_ = static_cast<unsigned int>(LOWORD(lParam));
+            windowHeight_ = static_cast<unsigned int>(HIWORD(lParam));
+            if (wParam != SIZE_MINIMIZED) {
+                framebufferResized_ = true;
+            }
+            return 0;
+        case WM_RBUTTONDOWN:
+            if (uiCapturingMouse && !sceneAllowsMouseInteraction) {
+                rightDragActive_ = false;
+                return 0;
+            }
+            rightDragActive_ = true;
+            lastMousePosition_ = {GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+            return 0;
+        case WM_RBUTTONUP:
             rightDragActive_ = false;
             return 0;
-        }
-        rightDragActive_ = true;
-        lastMousePosition_ = {GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
-        return 0;
-    case WM_RBUTTONUP:
-        rightDragActive_ = false;
-        return 0;
-    case WM_LBUTTONDOWN:
-        if (uiCapturingMouse && !sceneAllowsMouseInteraction) {
+        case WM_LBUTTONDOWN:
+            if (uiCapturingMouse && !sceneAllowsMouseInteraction) {
+                leftDragActive_ = false;
+                return 0;
+            }
+            leftDragActive_ = true;
+            lastMousePosition_ = {GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+            return 0;
+        case WM_LBUTTONUP:
             leftDragActive_ = false;
             return 0;
-        }
-        leftDragActive_ = true;
-        lastMousePosition_ = {GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
-        return 0;
-    case WM_LBUTTONUP:
-        leftDragActive_ = false;
-        return 0;
-    case WM_MOUSEMOVE: {
-        const POINT currentPoint{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
-        const float deltaX = static_cast<float>(currentPoint.x - lastMousePosition_.x);
-        const float deltaY = static_cast<float>(currentPoint.y - lastMousePosition_.y);
-        lastMousePosition_ = currentPoint;
+        case WM_MOUSEMOVE: {
+            const POINT currentPoint{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+            const float deltaX = static_cast<float>(currentPoint.x - lastMousePosition_.x);
+            const float deltaY = static_cast<float>(currentPoint.y - lastMousePosition_.y);
+            lastMousePosition_ = currentPoint;
 
-        if (uiCapturingMouse && !sceneAllowsMouseInteraction) {
-            rightDragActive_ = false;
-            leftDragActive_ = false;
+            if (uiCapturingMouse && !sceneAllowsMouseInteraction) {
+                rightDragActive_ = false;
+                leftDragActive_ = false;
+                return 0;
+            }
+
+            if (rightDragActive_) {
+                modelYawRadians_ += deltaX * 0.01f;
+                modelPitchRadians_ += deltaY * 0.01f;
+            }
+            if (leftDragActive_) {
+                modelTranslation_.x += deltaX * 0.005f;
+                modelTranslation_.y -= deltaY * 0.005f;
+            }
             return 0;
         }
-
-        if (rightDragActive_) {
-            modelYawRadians_ += deltaX * 0.01f;
-            modelPitchRadians_ += deltaY * 0.01f;
-        }
-        if (leftDragActive_) {
-            modelTranslation_.x += deltaX * 0.005f;
-            modelTranslation_.y -= deltaY * 0.005f;
-        }
-        return 0;
-    }
-    case WM_MOUSEWHEEL: {
-        if (uiCapturingMouse && !sceneAllowsMouseInteraction) {
+        case WM_MOUSEWHEEL: {
+            if (uiCapturingMouse && !sceneAllowsMouseInteraction) {
+                return 0;
+            }
+            const short wheelDelta = GET_WHEEL_DELTA_WPARAM(wParam);
+            cameraDistance_ -=
+                static_cast<float>(wheelDelta) / static_cast<float>(WHEEL_DELTA) * 0.2f;
+            cameraDistance_ =
+                std::clamp(cameraDistance_, 1.0f, std::max(20.0f, sceneRadius_ * 20.0f));
+            // appendOutput("Zoom updated");
             return 0;
         }
-        const short wheelDelta = GET_WHEEL_DELTA_WPARAM(wParam);
-        cameraDistance_ -= static_cast<float>(wheelDelta) / static_cast<float>(WHEEL_DELTA) * 0.2f;
-        cameraDistance_ = std::clamp(cameraDistance_, 1.0f, std::max(20.0f, sceneRadius_ * 20.0f));
-        // appendOutput("Zoom updated");
-        return 0;
-    }
-    default:
-        break;
+        default:
+            break;
     }
 
     return DefWindowProc(hWnd, message, wParam, lParam);
 }
 
-} // namespace vr
+}  // namespace vr

@@ -19,7 +19,7 @@
 namespace vr {
 
 class Renderer {
-public:
+  public:
     struct Vertex {
         glm::vec3 position;
         glm::vec3 normal;
@@ -55,7 +55,7 @@ public:
     void mainLoop();
     void shutdown();
 
-private:
+  private:
     struct QueueFamilyIndices {
         std::uint32_t graphicsFamily = UINT32_MAX;
         std::uint32_t presentFamily = UINT32_MAX;
@@ -122,38 +122,34 @@ private:
 
     [[nodiscard]] QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device) const;
     [[nodiscard]] SwapchainSupportDetails querySwapchainSupport(VkPhysicalDevice device) const;
-    [[nodiscard]] VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& formats) const;
-    [[nodiscard]] VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& presentModes) const;
+    [[nodiscard]] VkSurfaceFormatKHR chooseSwapSurfaceFormat(
+        const std::vector<VkSurfaceFormatKHR>& formats
+    ) const;
+    [[nodiscard]] VkPresentModeKHR chooseSwapPresentMode(
+        const std::vector<VkPresentModeKHR>& presentModes
+    ) const;
     [[nodiscard]] VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities) const;
     [[nodiscard]] bool isDeviceSuitable(VkPhysicalDevice device) const;
     [[nodiscard]] bool checkDeviceExtensionSupport(VkPhysicalDevice device) const;
     [[nodiscard]] VkFormat findSupportedFormat(
-        const std::vector<VkFormat>& candidates,
-        VkImageTiling tiling,
-        VkFormatFeatureFlags features
+        const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features
     ) const;
     [[nodiscard]] VkFormat findDepthFormat() const;
 
     static std::vector<char> readBinaryFile(const char* filePath);
     std::uint32_t findMemoryType(std::uint32_t typeFilter, VkMemoryPropertyFlags properties) const;
     void createBuffer(
-        VkDeviceSize size,
-        VkBufferUsageFlags usage,
-        VkMemoryPropertyFlags properties,
-        VkBuffer& buffer,
-        VkDeviceMemory& bufferMemory
+        VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
+        VkBuffer& buffer, VkDeviceMemory& bufferMemory
     );
     void createImage(
-        std::uint32_t width,
-        std::uint32_t height,
-        VkFormat format,
-        VkImageTiling tiling,
-        VkImageUsageFlags usage,
-        VkMemoryPropertyFlags properties,
-        VkImage& image,
+        std::uint32_t width, std::uint32_t height, VkFormat format, VkImageTiling tiling,
+        VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage& image,
         VkDeviceMemory& imageMemory
     );
-    VkImageView createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags) const;
+    VkImageView createImageView(
+        VkImage image, VkFormat format, VkImageAspectFlags aspectFlags
+    ) const;
     VkShaderModule createShaderModule(const std::vector<char>& code) const;
     static LRESULT CALLBACK WindowProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
     LRESULT handleWindowMessage(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
@@ -274,4 +270,4 @@ private:
     bool ready_ = false;
 };
 
-} // namespace vr
+}  // namespace vr

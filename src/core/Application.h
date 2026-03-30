@@ -5,11 +5,11 @@
 namespace vr {
 
 class Application {
-public:
+  public:
     int run(int argc, char** argv);
 
-private:
+  private:
     Renderer renderer_;
 };
 
-} // namespace vr
+}  // namespace vr

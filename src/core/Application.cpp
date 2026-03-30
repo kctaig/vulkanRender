@@ -23,4 +23,4 @@ int Application::run(int argc, char** argv) {
     return 0;
 }
 
-} // namespace vr
+}  // namespace vr
