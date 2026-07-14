@@ -355,7 +355,7 @@ LRESULT Renderer::handleWindowMessage(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
             lastMousePosition_ = cur;
 
             if (rightDragActive_) {
-                scene_.camera.rotate(dx * 0.01f, dy * 0.01f);
+                scene_.camera.rotate(dx * 0.01f, -dy * 0.01f);
             }
             if (leftDragActive_) {
                 scene_.camera.pan(glm::vec2(-dx * 0.005f, dy * 0.005f));

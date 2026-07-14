@@ -340,8 +340,8 @@ void ForwardPass::createDescriptorSetLayout(VulkanContext& ctx) {
 void ForwardPass::createGraphicsPipeline(VulkanContext& ctx) {
     const std::string shaderRoot = VR_SHADER_DIR;
 
-    auto vertCode = VulkanContext::readBinaryFile((shaderRoot + "/triangle.vert.spv").c_str());
-    auto fragCode = VulkanContext::readBinaryFile((shaderRoot + "/triangle.frag.spv").c_str());
+    auto vertCode = VulkanContext::readBinaryFile((shaderRoot + "/forwardPass.vert.spv").c_str());
+    auto fragCode = VulkanContext::readBinaryFile((shaderRoot + "/forwardPass.frag.spv").c_str());
 
     VkShaderModule vertModule = ctx.createShaderModule(vertCode);
     VkShaderModule fragModule = ctx.createShaderModule(fragCode);

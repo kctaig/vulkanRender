@@ -18,7 +18,7 @@ layout(set = 0, binding = 0) uniform Ubo {
 void main() {
     vec4 worldPos = ubo.model * vec4(inPosition, 1.0);
     vec3 worldNormal = normalize(mat3(ubo.model) * inNormal);
-    vec3 albedo = normalize(abs(inNormal));
+    vec3 albedo = normalize(inNormal);
 
     outWorldPos = worldPos.xyz;
     outWorldNormal = worldNormal;
