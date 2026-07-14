@@ -16,6 +16,8 @@
 
 namespace vr {
 
+class Scene;
+
 class ForwardPass : public RenderPass {
   public:
     struct Vertex {
@@ -35,24 +37,22 @@ class ForwardPass : public RenderPass {
 
     // --- RenderPass interface ---
     bool initialize(VulkanContext& ctx) override;
-    void record(VkCommandBuffer cmd, std::uint32_t frameIndex,
-                std::uint32_t imageIndex) override;
+    void record(VkCommandBuffer cmd, std::uint32_t frameIndex, std::uint32_t imageIndex) override;
     void onSwapchainResize(VulkanContext& ctx) override;
     void shutdown() override;
+
+    // --- Scene ---
+    void setScene(Scene& scene);
 
     // --- Mesh loading ---
     void setMeshInputPath(std::string path);
 
-    // --- Camera control (called by window input handler) ---
+    // --- Model transform ---
     void addModelYaw(float delta);
     void addModelPitch(float delta);
     void addModelTranslation(float dx, float dy);
-    void addCameraDistance(float delta);
-    float sceneRadius() const;
 
   private:
-    static constexpr std::uint32_t kMaxFramesInFlight = 2;
-
     void createRenderPass(VulkanContext& ctx);
     void createDescriptorSetLayout(VulkanContext& ctx);
     void createGraphicsPipeline(VulkanContext& ctx);
@@ -67,9 +67,8 @@ class ForwardPass : public RenderPass {
     void loadMeshVertices();
     void refreshSceneScaleParams();
 
-    VulkanContext* ctx_ = nullptr;
+    Scene* scene_ = nullptr;
 
-    VkRenderPass renderPass_ = VK_NULL_HANDLE;
     VkDescriptorSetLayout descriptorSetLayout_ = VK_NULL_HANDLE;
     VkPipelineLayout pipelineLayout_ = VK_NULL_HANDLE;
     VkPipeline graphicsPipeline_ = VK_NULL_HANDLE;
@@ -78,8 +77,6 @@ class ForwardPass : public RenderPass {
     VkDeviceMemory depthImageMemory_ = VK_NULL_HANDLE;
     VkImageView depthImageView_ = VK_NULL_HANDLE;
     VkFormat depthFormat_ = VK_FORMAT_UNDEFINED;
-
-    std::vector<VkFramebuffer> swapchainFramebuffers_;
 
     VkBuffer vertexBuffer_ = VK_NULL_HANDLE;
     VkDeviceMemory vertexBufferMemory_ = VK_NULL_HANDLE;
@@ -99,7 +96,6 @@ class ForwardPass : public RenderPass {
     glm::vec3 modelTranslation_ = glm::vec3(0.0f);
     float modelYawRadians_ = 0.0f;
     float modelPitchRadians_ = 0.0f;
-    float cameraDistance_ = 3.5f;
 };
 
 }  // namespace vr

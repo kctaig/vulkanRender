@@ -13,6 +13,7 @@
 
 #include "core/VulkanContext.h"
 #include "scene/MeshIO.h"
+#include "scene/Scene.h"
 
 namespace vr {
 
@@ -94,9 +95,7 @@ bool ForwardPass::initialize(VulkanContext& ctx) {
     return true;
 }
 
-void ForwardPass::record(
-    VkCommandBuffer cmd, std::uint32_t frameIndex, std::uint32_t imageIndex
-) {
+void ForwardPass::record(VkCommandBuffer cmd, std::uint32_t frameIndex, std::uint32_t imageIndex) {
     updateUniformBuffer(*ctx_, frameIndex);
 
     std::array<VkClearValue, 2> clears{};
@@ -133,8 +132,8 @@ void ForwardPass::record(
     vkCmdBindVertexBuffers(cmd, 0, 1, vbs, offsets);
     vkCmdBindIndexBuffer(cmd, indexBuffer_, 0, VK_INDEX_TYPE_UINT32);
     vkCmdBindDescriptorSets(
-        cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_, 0, 1,
-        &descriptorSets_[frameIndex], 0, nullptr
+        cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_, 0, 1, &descriptorSets_[frameIndex],
+        0, nullptr
     );
 
     vkCmdDrawIndexed(cmd, static_cast<std::uint32_t>(meshIndices_.size()), 1, 0, 0, 0);
@@ -247,20 +246,21 @@ void ForwardPass::setMeshInputPath(std::string path) {
     meshInputPath_ = std::move(path);
 }
 
-void ForwardPass::addModelYaw(float delta) { modelYawRadians_ += delta; }
-void ForwardPass::addModelPitch(float delta) { modelPitchRadians_ += delta; }
+void ForwardPass::addModelYaw(float delta) {
+    modelYawRadians_ += delta;
+}
+void ForwardPass::addModelPitch(float delta) {
+    modelPitchRadians_ += delta;
+}
 
 void ForwardPass::addModelTranslation(float dx, float dy) {
     modelTranslation_.x += dx;
     modelTranslation_.y += dy;
 }
 
-void ForwardPass::addCameraDistance(float delta) {
-    cameraDistance_ -= delta;
-    cameraDistance_ = std::clamp(cameraDistance_, 1.0f, std::max(20.0f, sceneRadius_ * 20.0f));
+void ForwardPass::setScene(Scene& scene) {
+    scene_ = &scene;
 }
-
-float ForwardPass::sceneRadius() const { return sceneRadius_; }
 
 // ===================================================================
 // Private: resource creation  (all use `ctx` parameter, not ctx_)
@@ -296,10 +296,10 @@ void ForwardPass::createRenderPass(VulkanContext& ctx) {
     VkSubpassDependency dep{};
     dep.srcSubpass = VK_SUBPASS_EXTERNAL;
     dep.dstSubpass = 0;
-    dep.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
-                       VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-    dep.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
-                       VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    dep.srcStageMask =
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    dep.dstStageMask =
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
     dep.dstAccessMask =
         VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 
@@ -340,10 +340,8 @@ void ForwardPass::createDescriptorSetLayout(VulkanContext& ctx) {
 void ForwardPass::createGraphicsPipeline(VulkanContext& ctx) {
     const std::string shaderRoot = VR_SHADER_DIR;
 
-    auto vertCode =
-        VulkanContext::readBinaryFile((shaderRoot + "/triangle.vert.spv").c_str());
-    auto fragCode =
-        VulkanContext::readBinaryFile((shaderRoot + "/triangle.frag.spv").c_str());
+    auto vertCode = VulkanContext::readBinaryFile((shaderRoot + "/triangle.vert.spv").c_str());
+    auto fragCode = VulkanContext::readBinaryFile((shaderRoot + "/triangle.frag.spv").c_str());
 
     VkShaderModule vertModule = ctx.createShaderModule(vertCode);
     VkShaderModule fragModule = ctx.createShaderModule(fragCode);
@@ -474,8 +472,8 @@ void ForwardPass::createFramebuffers(VulkanContext& ctx) {
         info.height = ctx.swapchainExtent().height;
         info.layers = 1;
 
-        if (vkCreateFramebuffer(
-                ctx.device(), &info, nullptr, &swapchainFramebuffers_[i]) != VK_SUCCESS) {
+        if (vkCreateFramebuffer(ctx.device(), &info, nullptr, &swapchainFramebuffers_[i]) !=
+            VK_SUCCESS) {
             throw std::runtime_error("vkCreateFramebuffer failed");
         }
     }
@@ -489,8 +487,8 @@ void ForwardPass::createVertexBuffer(VulkanContext& ctx) {
     VkDeviceSize size = sizeof(Vertex) * meshVertices_.size();
     ctx.createBuffer(
         size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-        vertexBuffer_, vertexBufferMemory_
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, vertexBuffer_,
+        vertexBufferMemory_
     );
 
     void* data = nullptr;
@@ -503,8 +501,8 @@ void ForwardPass::createIndexBuffer(VulkanContext& ctx) {
     VkDeviceSize size = sizeof(std::uint32_t) * meshIndices_.size();
     ctx.createBuffer(
         size, VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-        indexBuffer_, indexBufferMemory_
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, indexBuffer_,
+        indexBufferMemory_
     );
 
     void* data = nullptr;
@@ -550,8 +548,7 @@ void ForwardPass::createDescriptorSets(VulkanContext& ctx) {
     allocInfo.descriptorSetCount = kMaxFramesInFlight;
     allocInfo.pSetLayouts = layouts.data();
 
-    if (vkAllocateDescriptorSets(
-            ctx.device(), &allocInfo, descriptorSets_.data()) != VK_SUCCESS) {
+    if (vkAllocateDescriptorSets(ctx.device(), &allocInfo, descriptorSets_.data()) != VK_SUCCESS) {
         throw std::runtime_error("vkAllocateDescriptorSets failed");
     }
 
@@ -581,16 +578,18 @@ void ForwardPass::updateUniformBuffer(VulkanContext& ctx, std::uint32_t frameInd
     model = glm::rotate(model, modelYawRadians_, glm::vec3(0.0f, 1.0f, 0.0f));
     model = glm::rotate(model, modelPitchRadians_, glm::vec3(1.0f, 0.0f, 0.0f));
 
+    if (scene_ != nullptr) {
+        scene_->camera.setPerspective(
+            glm::radians(45.0f),
+            static_cast<float>(ctx.swapchainExtent().width) /
+                static_cast<float>(ctx.swapchainExtent().height),
+            0.1f, std::max(100.0f, sceneRadius_ * 50.0f)
+        );
+        ubo.view = scene_->camera.viewMatrix();
+        ubo.projection = scene_->camera.projectionMatrix();
+    }
+
     ubo.model = model;
-    ubo.view = glm::lookAt(
-        glm::vec3(0.0f, 0.0f, cameraDistance_), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f)
-    );
-    ubo.projection = glm::perspective(
-        glm::radians(45.0f),
-        static_cast<float>(ctx.swapchainExtent().width) /
-            static_cast<float>(ctx.swapchainExtent().height),
-        0.1f, std::max(100.0f, sceneRadius_ * 50.0f)
-    );
     ubo.projection[1][1] *= -1.0f;
 
     void* data = nullptr;
@@ -648,6 +647,10 @@ void ForwardPass::refreshSceneScaleParams() {
     }
     if (sceneRadius_ < 1.0f) {
         sceneRadius_ = 1.0f;
+    }
+
+    if (scene_ != nullptr) {
+        scene_->camera.setMaxDistance(std::max(20.0f, sceneRadius_ * 20.0f));
     }
 }
 

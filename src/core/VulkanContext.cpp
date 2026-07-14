@@ -57,8 +57,7 @@ void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& create
                              VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
                              VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
     createInfo.pfnUserCallback =
-        [](VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
-           VkDebugUtilsMessageTypeFlagsEXT,
+        [](VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT,
            const VkDebugUtilsMessengerCallbackDataEXT* callbackData, void*) -> VkBool32 {
         const char* severity = "INFO";
         if ((messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) != 0U) {
@@ -172,33 +171,57 @@ void VulkanContext::setFramebufferSize(std::uint32_t width, std::uint32_t height
 // Accessors
 // ---------------------------------------------------------------------------
 
-VkInstance VulkanContext::instance() const { return instance_; }
-VkPhysicalDevice VulkanContext::physicalDevice() const { return physicalDevice_; }
-VkDevice VulkanContext::device() const { return device_; }
-VkQueue VulkanContext::graphicsQueue() const { return graphicsQueue_; }
-VkQueue VulkanContext::presentQueue() const { return presentQueue_; }
-VkSurfaceKHR VulkanContext::surface() const { return surface_; }
-VkCommandPool VulkanContext::commandPool() const { return commandPool_; }
-VkSwapchainKHR VulkanContext::swapchain() const { return swapchain_; }
-VkFormat VulkanContext::swapchainFormat() const { return swapchainImageFormat_; }
-VkExtent2D VulkanContext::swapchainExtent() const { return swapchainExtent_; }
-std::uint32_t VulkanContext::swapchainMinImageCount() const { return swapchainMinImageCount_; }
+VkInstance VulkanContext::instance() const {
+    return instance_;
+}
+VkPhysicalDevice VulkanContext::physicalDevice() const {
+    return physicalDevice_;
+}
+VkDevice VulkanContext::device() const {
+    return device_;
+}
+VkQueue VulkanContext::graphicsQueue() const {
+    return graphicsQueue_;
+}
+VkQueue VulkanContext::presentQueue() const {
+    return presentQueue_;
+}
+VkSurfaceKHR VulkanContext::surface() const {
+    return surface_;
+}
+VkCommandPool VulkanContext::commandPool() const {
+    return commandPool_;
+}
+VkSwapchainKHR VulkanContext::swapchain() const {
+    return swapchain_;
+}
+VkFormat VulkanContext::swapchainFormat() const {
+    return swapchainImageFormat_;
+}
+VkExtent2D VulkanContext::swapchainExtent() const {
+    return swapchainExtent_;
+}
+std::uint32_t VulkanContext::swapchainMinImageCount() const {
+    return swapchainMinImageCount_;
+}
 std::uint32_t VulkanContext::swapchainImageCount() const {
     return static_cast<std::uint32_t>(swapchainImages_.size());
 }
-const std::vector<VkImage>& VulkanContext::swapchainImages() const { return swapchainImages_; }
+const std::vector<VkImage>& VulkanContext::swapchainImages() const {
+    return swapchainImages_;
+}
 const std::vector<VkImageView>& VulkanContext::swapchainImageViews() const {
     return swapchainImageViews_;
 }
-bool VulkanContext::validationEnabled() const { return validationEnabled_; }
+bool VulkanContext::validationEnabled() const {
+    return validationEnabled_;
+}
 
 // ---------------------------------------------------------------------------
 // Swapchain operations
 // ---------------------------------------------------------------------------
 
-bool VulkanContext::acquireNextImage(
-    VkSemaphore signalSemaphore, std::uint32_t& outImageIndex
-) {
+bool VulkanContext::acquireNextImage(VkSemaphore signalSemaphore, std::uint32_t& outImageIndex) {
     VkResult result = vkAcquireNextImageKHR(
         device_, swapchain_, UINT64_MAX, signalSemaphore, VK_NULL_HANDLE, &outImageIndex
     );
@@ -282,8 +305,8 @@ VkFormat VulkanContext::findDepthFormat() const {
 }
 
 void VulkanContext::createBuffer(
-    VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties,
-    VkBuffer& buffer, VkDeviceMemory& bufferMemory
+    VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer,
+    VkDeviceMemory& bufferMemory
 ) {
     VkBufferCreateInfo bufferInfo{};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -419,9 +442,7 @@ VulkanContext::QueueFamilyIndices VulkanContext::findQueueFamilies(VkPhysicalDev
     std::uint32_t queueFamilyCount = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
     std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
-    vkGetPhysicalDeviceQueueFamilyProperties(
-        device, &queueFamilyCount, queueFamilies.data()
-    );
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
 
     for (std::uint32_t i = 0; i < queueFamilyCount; ++i) {
         if ((queueFamilies[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) != 0U) {
@@ -463,9 +484,7 @@ VulkanContext::SwapchainSupportDetails VulkanContext::querySwapchainSupport(
     }
 
     std::uint32_t presentModeCount = 0;
-    vkGetPhysicalDeviceSurfacePresentModesKHR(
-        device, surface_, &presentModeCount, nullptr
-    );
+    vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface_, &presentModeCount, nullptr);
     if (presentModeCount > 0) {
         details.presentModes.resize(presentModeCount);
         vkGetPhysicalDeviceSurfacePresentModesKHR(
@@ -510,10 +529,8 @@ void VulkanContext::createInstance() {
     std::vector<const char*> enabledInstanceExtensions(
         kInstanceExtensions.begin(), kInstanceExtensions.end()
     );
-    const bool shouldEnableValidation =
-        validationEnabled_ && areValidationLayersSupported();
-    const bool supportsDebugUtils =
-        isInstanceExtensionSupported(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+    const bool shouldEnableValidation = validationEnabled_ && areValidationLayersSupported();
+    const bool supportsDebugUtils = isInstanceExtensionSupported(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     if (shouldEnableValidation && supportsDebugUtils) {
         enabledInstanceExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     }
@@ -526,8 +543,7 @@ void VulkanContext::createInstance() {
     VkInstanceCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     createInfo.pApplicationInfo = &applicationInfo;
-    createInfo.enabledExtensionCount =
-        static_cast<std::uint32_t>(enabledInstanceExtensions.size());
+    createInfo.enabledExtensionCount = static_cast<std::uint32_t>(enabledInstanceExtensions.size());
     createInfo.ppEnabledExtensionNames = enabledInstanceExtensions.data();
 
     if (shouldEnableValidation) {
@@ -669,8 +685,7 @@ void VulkanContext::createSwapchain() {
     VkExtent2D extent = chooseSwapExtent(support.capabilities);
 
     std::uint32_t imageCount = support.capabilities.minImageCount + 1;
-    if (support.capabilities.maxImageCount > 0 &&
-        imageCount > support.capabilities.maxImageCount) {
+    if (support.capabilities.maxImageCount > 0 && imageCount > support.capabilities.maxImageCount) {
         imageCount = support.capabilities.maxImageCount;
     }
     swapchainMinImageCount_ = support.capabilities.minImageCount;
@@ -745,8 +760,7 @@ bool VulkanContext::isDeviceSuitable(VkPhysicalDevice device) const {
     bool swapchainAdequate = false;
     if (extensionsSupported) {
         SwapchainSupportDetails supportDetails = querySwapchainSupport(device);
-        swapchainAdequate =
-            !supportDetails.formats.empty() && !supportDetails.presentModes.empty();
+        swapchainAdequate = !supportDetails.formats.empty() && !supportDetails.presentModes.empty();
     }
 
     return indices.isComplete() && extensionsSupported && swapchainAdequate;
@@ -761,9 +775,7 @@ bool VulkanContext::checkDeviceExtensionSupport(VkPhysicalDevice device) const {
         device, nullptr, &extensionCount, availableExtensions.data()
     );
 
-    std::set<std::string> requiredExtensions(
-        kDeviceExtensions.begin(), kDeviceExtensions.end()
-    );
+    std::set<std::string> requiredExtensions(kDeviceExtensions.begin(), kDeviceExtensions.end());
     for (const auto& extension : availableExtensions) {
         requiredExtensions.erase(extension.extensionName);
     }
@@ -796,9 +808,7 @@ VkPresentModeKHR VulkanContext::chooseSwapPresentMode(
     return VK_PRESENT_MODE_FIFO_KHR;
 }
 
-VkExtent2D VulkanContext::chooseSwapExtent(
-    const VkSurfaceCapabilitiesKHR& capabilities
-) const {
+VkExtent2D VulkanContext::chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities) const {
     if (capabilities.currentExtent.width != UINT32_MAX) {
         return capabilities.currentExtent;
     }
@@ -809,8 +819,7 @@ VkExtent2D VulkanContext::chooseSwapExtent(
         actualExtent.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width
     );
     actualExtent.height = std::clamp(
-        actualExtent.height, capabilities.minImageExtent.height,
-        capabilities.maxImageExtent.height
+        actualExtent.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height
     );
 
     return actualExtent;

@@ -18,7 +18,8 @@ struct FaceVertexKey {
     int normalIndex = -1;
 
     bool operator==(const FaceVertexKey& other) const {
-        return positionIndex == other.positionIndex && uvIndex == other.uvIndex && normalIndex == other.normalIndex;
+        return positionIndex == other.positionIndex && uvIndex == other.uvIndex &&
+               normalIndex == other.normalIndex;
     }
 };
 
@@ -57,7 +58,7 @@ FaceVertexKey parseFaceToken(const std::string& token) {
     return key;
 }
 
-} // namespace
+}  // namespace
 
 bool loadObjMesh(const std::string& filePath, MeshInputData& outMesh) {
     std::ifstream file(filePath);
@@ -102,7 +103,8 @@ bool loadObjMesh(const std::string& filePath, MeshInputData& outMesh) {
             while (lineStream >> token) {
                 if (!token.empty()) {
                     FaceVertexKey key = parseFaceToken(token);
-                    if (key.positionIndex >= 0 && static_cast<std::size_t>(key.positionIndex) < positions.size()) {
+                    if (key.positionIndex >= 0 &&
+                        static_cast<std::size_t>(key.positionIndex) < positions.size()) {
                         faceKeys.push_back(key);
                     }
                 }
@@ -119,7 +121,8 @@ bool loadObjMesh(const std::string& filePath, MeshInputData& outMesh) {
     }
 
     const std::size_t faceCount = faces.size();
-    const std::size_t hardwareThreads = std::max<std::size_t>(1, std::thread::hardware_concurrency());
+    const std::size_t hardwareThreads =
+        std::max<std::size_t>(1, std::thread::hardware_concurrency());
     const std::size_t workerCount = std::min(hardwareThreads, faceCount);
 
     std::vector<std::vector<MeshVertexInput>> workerVertices(workerCount);
@@ -144,7 +147,8 @@ bool loadObjMesh(const std::string& filePath, MeshInputData& outMesh) {
                     MeshVertexInput vertex{};
                     vertex.position = positions[static_cast<std::size_t>(key.positionIndex)];
 
-                    if (key.normalIndex >= 0 && static_cast<std::size_t>(key.normalIndex) < normals.size()) {
+                    if (key.normalIndex >= 0 &&
+                        static_cast<std::size_t>(key.normalIndex) < normals.size()) {
                         vertex.normal = normals[static_cast<std::size_t>(key.normalIndex)];
                     }
 
@@ -181,7 +185,9 @@ bool loadObjMesh(const std::string& filePath, MeshInputData& outMesh) {
 
     std::uint32_t vertexBase = 0;
     for (std::size_t worker = 0; worker < workerCount; ++worker) {
-        outMesh.vertices.insert(outMesh.vertices.end(), workerVertices[worker].begin(), workerVertices[worker].end());
+        outMesh.vertices.insert(
+            outMesh.vertices.end(), workerVertices[worker].begin(), workerVertices[worker].end()
+        );
         for (std::uint32_t localIndex : workerIndices[worker]) {
             outMesh.indices.push_back(localIndex + vertexBase);
         }
@@ -191,4 +197,4 @@ bool loadObjMesh(const std::string& filePath, MeshInputData& outMesh) {
     return !outMesh.vertices.empty() && !outMesh.indices.empty();
 }
 
-} // namespace vr
+}  // namespace vr

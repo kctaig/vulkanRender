@@ -5,29 +5,30 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /utf-8") 
+
 option(VR_ENABLE_VALIDATION "Enable Vulkan validation layers" ON)
 
-include(FetchContent)
-
 find_package(Vulkan REQUIRED)
-find_package(glm CONFIG QUIET)
 
+# --- glslc ---
 if(NOT Vulkan_GLSLC_EXECUTABLE)
     find_program(Vulkan_GLSLC_EXECUTABLE NAMES glslc HINTS ${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE})
 endif()
-
 if(NOT Vulkan_GLSLC_EXECUTABLE)
     message(FATAL_ERROR "glslc not found. Install Vulkan SDK with glslc.")
 endif()
 
+# --- GLM (header-only, vendored in 3dparty) ---
 if(NOT TARGET glm::glm)
-    message(STATUS "glm::glm target not found, fetching GLM from GitHub...")
-    FetchContent_Declare(
-        glm
-        GIT_REPOSITORY https://github.com/g-truc/glm.git
-        GIT_TAG 1.0.1
-    )
-    FetchContent_MakeAvailable(glm)
+    set(GLM_DIR ${CMAKE_SOURCE_DIR}/3dparty/glm)
+    if(EXISTS ${GLM_DIR}/glm/glm.hpp)
+        add_library(glm::glm INTERFACE IMPORTED)
+        target_include_directories(glm::glm INTERFACE ${GLM_DIR})
+        message(STATUS "GLM: using vendored copy at ${GLM_DIR}")
+    else()
+        message(FATAL_ERROR "GLM not found at ${GLM_DIR}")
+    endif()
 endif()
 
 set(VR_SOURCES
@@ -39,7 +40,18 @@ set(VR_SOURCES
     src/renderer/ForwardPass.cpp
 )
 
-add_executable(vulkan_renderer ${VR_SOURCES})
+set(VR_HEADERS
+    include/core/Application.h
+    include/core/VulkanContext.h
+    include/renderer/RenderPass.h
+    include/renderer/Renderer.h
+    include/renderer/ForwardPass.h
+    include/scene/Camera.h
+    include/scene/Scene.h
+    include/scene/MeshIO.h
+)
+
+add_executable(vulkan_renderer ${VR_SOURCES} ${VR_HEADERS})
 
 set(VR_SHADER_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/shaders)
 set(VR_SHADER_BINARY_DIR ${CMAKE_BINARY_DIR}/shaders)
@@ -80,4 +92,5 @@ target_compile_definitions(vulkan_renderer PRIVATE
 )
 
 
-source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR}/src FILES ${VR_SOURCES})
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR}/src   FILES ${VR_SOURCES})
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR}/include FILES ${VR_HEADERS})

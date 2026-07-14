@@ -1,10 +1,10 @@
 #pragma once
 
 #include <cstdint>
+#include <glm/glm.hpp>
 #include <string>
 #include <vector>
 
-#include <glm/glm.hpp>
 
 namespace vr {
 
@@ -21,4 +21,4 @@ struct MeshInputData {
 
 bool loadObjMesh(const std::string& filePath, MeshInputData& outMesh);
 
-} // namespace vr
+}  // namespace vr

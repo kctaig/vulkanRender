@@ -1,18 +1,25 @@
 #pragma once
 
 #include <cstdint>
+#include <glm/glm.hpp>
 #include <string>
 #include <vector>
 
-#include <glm/glm.hpp>
+#include "scene/Camera.h"
 
 namespace vr {
 
-struct Mesh {
-    std::string name;
-    std::uint32_t firstIndex = 0;
-    std::uint32_t indexCount = 0;
-    glm::mat4 model = glm::mat4(1.0f);
+struct DirectionalLight {
+    glm::vec3 direction = glm::vec3(0.0f, -1.0f, 0.0f);
+    glm::vec3 color = glm::vec3(1.0f);
+    float intensity = 1.0f;
+};
+
+struct PointLight {
+    glm::vec3 position = glm::vec3(0.0f);
+    glm::vec3 color = glm::vec3(1.0f);
+    float intensity = 1.0f;
+    float range = 10.0f;
 };
 
 struct Material {
@@ -23,25 +30,17 @@ struct Material {
     float ao = 1.0f;
 };
 
-struct Light {
-    glm::vec3 position = glm::vec3(0.0f, 5.0f, 0.0f);
-    float intensity = 10.0f;
-    glm::vec3 color = glm::vec3(1.0f);
-    float radius = 10.0f;
+struct MeshInstance {
+    glm::mat4 transform = glm::mat4(1.0f);
 };
 
-struct Camera {
-    glm::vec3 position = glm::vec3(0.0f, 0.0f, 3.0f);
-    glm::vec3 forward = glm::vec3(0.0f, 0.0f, -1.0f);
-    glm::mat4 view = glm::mat4(1.0f);
-    glm::mat4 projection = glm::mat4(1.0f);
-};
-
-struct Scene {
-    std::vector<Mesh> meshes;
-    std::vector<Material> materials;
-    std::vector<Light> lights;
+class Scene {
+  public:
     Camera camera;
+
+    std::vector<DirectionalLight> directionalLights;
+    std::vector<PointLight> pointLights;
+    std::vector<Material> materials;
 };
 
-} // namespace vr
+}  // namespace vr

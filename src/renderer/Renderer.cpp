@@ -37,13 +37,13 @@ bool Renderer::initialize(unsigned int width, unsigned int height) {
     }
 
     // --- Passes ---
-    auto forwardPass = std::make_unique<ForwardPass>();
-    if (!forwardPass->initialize(ctx_)) {
+    auto fp = std::make_unique<ForwardPass>();
+    if (!fp->initialize(ctx_)) {
         std::cerr << "[Renderer] ForwardPass initialization failed\n";
         return false;
     }
-    forwardPass_ = forwardPass.get();
-    passes_.push_back(std::move(forwardPass));
+    fp->setScene(scene_);
+    passes_.push_back(std::move(fp));
 
     // --- Command buffers ---
     {
@@ -51,11 +51,10 @@ bool Renderer::initialize(unsigned int width, unsigned int height) {
         allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
         allocInfo.commandPool = ctx_.commandPool();
         allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        allocInfo.commandBufferCount = kMaxFramesInFlight;
+        allocInfo.commandBufferCount = RenderPass::kMaxFramesInFlight;
 
-        std::array<VkCommandBuffer, kMaxFramesInFlight> cmdBufs{};
-        if (vkAllocateCommandBuffers(
-                ctx_.device(), &allocInfo, cmdBufs.data()) != VK_SUCCESS) {
+        std::array<VkCommandBuffer, RenderPass::kMaxFramesInFlight> cmdBufs{};
+        if (vkAllocateCommandBuffers(ctx_.device(), &allocInfo, cmdBufs.data()) != VK_SUCCESS) {
             std::cerr << "[Renderer] Command buffer allocation failed\n";
             return false;
         }
@@ -71,11 +70,12 @@ bool Renderer::initialize(unsigned int width, unsigned int height) {
         fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
         fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
-        for (std::uint32_t i = 0; i < kMaxFramesInFlight; ++i) {
-            if (vkCreateSemaphore(ctx_.device(), &semInfo, nullptr,
-                                  &imageAvailableSemaphores_[i]) != VK_SUCCESS ||
-                vkCreateFence(ctx_.device(), &fenceInfo, nullptr,
-                              &inFlightFences_[i]) != VK_SUCCESS) {
+        for (std::uint32_t i = 0; i < RenderPass::kMaxFramesInFlight; ++i) {
+            if (vkCreateSemaphore(
+                    ctx_.device(), &semInfo, nullptr, &imageAvailableSemaphores_[i]
+                ) != VK_SUCCESS ||
+                vkCreateFence(ctx_.device(), &fenceInfo, nullptr, &inFlightFences_[i]) !=
+                    VK_SUCCESS) {
                 std::cerr << "[Renderer] Sync object creation failed\n";
                 return false;
             }
@@ -84,8 +84,7 @@ bool Renderer::initialize(unsigned int width, unsigned int height) {
         const std::uint32_t n = ctx_.swapchainImageCount();
         renderFinishedSemaphores_.resize(n, VK_NULL_HANDLE);
         for (std::uint32_t i = 0; i < n; ++i) {
-            vkCreateSemaphore(ctx_.device(), &semInfo, nullptr,
-                              &renderFinishedSemaphores_[i]);
+            vkCreateSemaphore(ctx_.device(), &semInfo, nullptr, &renderFinishedSemaphores_[i]);
         }
         imagesInFlight_.assign(n, VK_NULL_HANDLE);
     }
@@ -95,16 +94,22 @@ bool Renderer::initialize(unsigned int width, unsigned int height) {
 }
 
 void Renderer::setMeshInputPath(std::string path) {
-    if (forwardPass_ != nullptr) {
-        forwardPass_->setMeshInputPath(std::move(path));
+    for (auto& pass : passes_) {
+        auto* fp = dynamic_cast<ForwardPass*>(pass.get());
+        if (fp != nullptr) {
+            fp->setMeshInputPath(std::move(path));
+            return;
+        }
     }
 }
 
 void Renderer::mainLoop() {
-    if (!ready_) return;
+    if (!ready_)
+        return;
 
     while (windowRunning_) {
-        if (!processWindowMessages()) break;
+        if (!processWindowMessages())
+            break;
         drawFrame();
     }
 
@@ -123,17 +128,19 @@ void Renderer::shutdown() {
         pass->shutdown();
     }
     passes_.clear();
-    forwardPass_ = nullptr;
 
     // Destroy sync objects
     for (auto& sem : imageAvailableSemaphores_) {
-        if (sem != VK_NULL_HANDLE) vkDestroySemaphore(ctx_.device(), sem, nullptr);
+        if (sem != VK_NULL_HANDLE)
+            vkDestroySemaphore(ctx_.device(), sem, nullptr);
     }
     for (auto& sem : renderFinishedSemaphores_) {
-        if (sem != VK_NULL_HANDLE) vkDestroySemaphore(ctx_.device(), sem, nullptr);
+        if (sem != VK_NULL_HANDLE)
+            vkDestroySemaphore(ctx_.device(), sem, nullptr);
     }
     for (auto& fence : inFlightFences_) {
-        if (fence != VK_NULL_HANDLE) vkDestroyFence(ctx_.device(), fence, nullptr);
+        if (fence != VK_NULL_HANDLE)
+            vkDestroyFence(ctx_.device(), fence, nullptr);
     }
 
     // VulkanContext cleans up commandPool, device, surface, instance
@@ -164,16 +171,16 @@ bool Renderer::initWindow(unsigned int width, unsigned int height) {
 
     if (RegisterClassEx(&wc) == 0) {
         DWORD err = GetLastError();
-        if (err != ERROR_CLASS_ALREADY_EXISTS) return false;
+        if (err != ERROR_CLASS_ALREADY_EXISTS)
+            return false;
     }
 
     RECT rect{0, 0, static_cast<LONG>(width), static_cast<LONG>(height)};
     AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, FALSE);
 
     windowHandle_ = CreateWindowExA(
-        0, wc.lpszClassName, "Vulkan Renderer", WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT, CW_USEDEFAULT, rect.right - rect.left, rect.bottom - rect.top,
-        nullptr, nullptr, instanceHandle_, this
+        0, wc.lpszClassName, "Vulkan Renderer", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
+        rect.right - rect.left, rect.bottom - rect.top, nullptr, nullptr, instanceHandle_, this
     );
 
     if (windowHandle_ == nullptr) {
@@ -247,8 +254,8 @@ void Renderer::drawFrame() {
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = sigSems;
 
-    if (vkQueueSubmit(ctx_.graphicsQueue(), 1, &submitInfo,
-                      inFlightFences_[currentFrame_]) != VK_SUCCESS) {
+    if (vkQueueSubmit(ctx_.graphicsQueue(), 1, &submitInfo, inFlightFences_[currentFrame_]) !=
+        VK_SUCCESS) {
         throw std::runtime_error("vkQueueSubmit failed");
     }
 
@@ -262,20 +269,20 @@ void Renderer::drawFrame() {
     presentInfo.pImageIndices = &imageIndex;
 
     VkResult result = vkQueuePresentKHR(ctx_.presentQueue(), &presentInfo);
-    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR ||
-        framebufferResized_) {
+    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebufferResized_) {
         framebufferResized_ = false;
         recreateSwapchain();
     } else if (result != VK_SUCCESS) {
         throw std::runtime_error("vkQueuePresentKHR failed");
     }
 
-    currentFrame_ = (currentFrame_ + 1) % kMaxFramesInFlight;
+    currentFrame_ = (currentFrame_ + 1) % RenderPass::kMaxFramesInFlight;
 }
 
 void Renderer::recreateSwapchain() {
     while (windowWidth_ == 0 || windowHeight_ == 0) {
-        if (!processWindowMessages()) return;
+        if (!processWindowMessages())
+            return;
     }
 
     ctx_.setFramebufferSize(windowWidth_, windowHeight_);
@@ -288,7 +295,8 @@ void Renderer::recreateSwapchain() {
 
     // Recreate per-image semaphores
     for (auto& sem : renderFinishedSemaphores_) {
-        if (sem != VK_NULL_HANDLE) vkDestroySemaphore(ctx_.device(), sem, nullptr);
+        if (sem != VK_NULL_HANDLE)
+            vkDestroySemaphore(ctx_.device(), sem, nullptr);
     }
     VkSemaphoreCreateInfo semInfo{};
     semInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
@@ -312,7 +320,8 @@ LRESULT CALLBACK Renderer::WindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
     } else {
         r = reinterpret_cast<Renderer*>(GetWindowLongPtr(hWnd, GWLP_USERDATA));
     }
-    if (r != nullptr) return r->handleWindowMessage(hWnd, msg, wParam, lParam);
+    if (r != nullptr)
+        return r->handleWindowMessage(hWnd, msg, wParam, lParam);
     return DefWindowProc(hWnd, msg, wParam, lParam);
 }
 
@@ -325,7 +334,8 @@ LRESULT Renderer::handleWindowMessage(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
         case WM_SIZE:
             windowWidth_ = static_cast<unsigned int>(LOWORD(lParam));
             windowHeight_ = static_cast<unsigned int>(HIWORD(lParam));
-            if (wParam != SIZE_MINIMIZED) framebufferResized_ = true;
+            if (wParam != SIZE_MINIMIZED)
+                framebufferResized_ = true;
             return 0;
         case WM_RBUTTONDOWN:
             rightDragActive_ = true;
@@ -347,21 +357,17 @@ LRESULT Renderer::handleWindowMessage(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
             float dy = static_cast<float>(cur.y - lastMousePosition_.y);
             lastMousePosition_ = cur;
 
-            if (forwardPass_ == nullptr) return 0;
             if (rightDragActive_) {
-                forwardPass_->addModelYaw(dx * 0.01f);
-                forwardPass_->addModelPitch(dy * 0.01f);
+                scene_.camera.rotate(dx * 0.01f, dy * 0.01f);
             }
             if (leftDragActive_) {
-                forwardPass_->addModelTranslation(dx * 0.005f, -dy * 0.005f);
+                scene_.camera.pan(glm::vec2(-dx * 0.005f, dy * 0.005f));
             }
             return 0;
         }
         case WM_MOUSEWHEEL: {
-            if (forwardPass_ == nullptr) return 0;
             short delta = GET_WHEEL_DELTA_WPARAM(wParam);
-            forwardPass_->addCameraDistance(
-                static_cast<float>(delta) / static_cast<float>(WHEEL_DELTA) * 0.2f);
+            scene_.camera.zoom(static_cast<float>(delta) / static_cast<float>(WHEEL_DELTA) * 0.2f);
             return 0;
         }
         default:

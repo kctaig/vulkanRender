@@ -14,10 +14,9 @@
 
 #include "core/VulkanContext.h"
 #include "renderer/RenderPass.h"
+#include "scene/Scene.h"
 
 namespace vr {
-
-class ForwardPass;
 
 class Renderer {
   public:
@@ -27,8 +26,6 @@ class Renderer {
     void shutdown();
 
   private:
-    static constexpr std::uint32_t kMaxFramesInFlight = 2;
-
     bool initWindow(unsigned int width, unsigned int height);
     bool processWindowMessages();
     void drawFrame();
@@ -38,8 +35,8 @@ class Renderer {
     LRESULT handleWindowMessage(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
     VulkanContext ctx_;
+    Scene scene_;
     std::vector<std::unique_ptr<RenderPass>> passes_;
-    ForwardPass* forwardPass_ = nullptr;  // convenience pointer for mouse input
 
     HWND windowHandle_ = nullptr;
     HINSTANCE instanceHandle_ = nullptr;
@@ -49,11 +46,11 @@ class Renderer {
     bool leftDragActive_ = false;
     POINT lastMousePosition_{0, 0};
 
-    std::array<VkSemaphore, kMaxFramesInFlight> imageAvailableSemaphores_{};
+    std::array<VkSemaphore, RenderPass::kMaxFramesInFlight> imageAvailableSemaphores_{};
     std::vector<VkSemaphore> renderFinishedSemaphores_;
-    std::array<VkFence, kMaxFramesInFlight> inFlightFences_{};
+    std::array<VkFence, RenderPass::kMaxFramesInFlight> inFlightFences_{};
     std::vector<VkFence> imagesInFlight_;
-    std::array<VkCommandBuffer, kMaxFramesInFlight> commandBuffers_{};
+    std::array<VkCommandBuffer, RenderPass::kMaxFramesInFlight> commandBuffers_{};
     std::uint32_t currentFrame_ = 0;
 
     unsigned int windowWidth_ = 1600;

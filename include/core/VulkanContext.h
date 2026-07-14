@@ -72,8 +72,7 @@ class VulkanContext {
         std::uint32_t typeFilter, VkMemoryPropertyFlags properties
     ) const;
     [[nodiscard]] VkFormat findSupportedFormat(
-        const std::vector<VkFormat>& candidates, VkImageTiling tiling,
-        VkFormatFeatureFlags features
+        const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features
     ) const;
     [[nodiscard]] VkFormat findDepthFormat() const;
     void createBuffer(
@@ -122,9 +121,7 @@ class VulkanContext {
     [[nodiscard]] VkPresentModeKHR chooseSwapPresentMode(
         const std::vector<VkPresentModeKHR>& presentModes
     ) const;
-    [[nodiscard]] VkExtent2D chooseSwapExtent(
-        const VkSurfaceCapabilitiesKHR& capabilities
-    ) const;
+    [[nodiscard]] VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities) const;
 
     HWND windowHandle_ = nullptr;
     HINSTANCE instanceHandle_ = nullptr;
