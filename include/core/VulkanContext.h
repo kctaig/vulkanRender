@@ -92,6 +92,31 @@ class VulkanContext {
     // --- Command buffer allocation ---
     [[nodiscard]] std::vector<VkCommandBuffer> allocateCommandBuffers(std::uint32_t count) const;
 
+    // --- One-shot command execution ---
+    template <typename Fn>
+    void executeOneShot(Fn&& fn) const {
+        auto cmds = allocateCommandBuffers(1);
+        VkCommandBuffer cmd = cmds[0];
+        VkCommandBufferBeginInfo bi{};
+        bi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+        vkBeginCommandBuffer(cmd, &bi);
+        fn(cmd);
+        vkEndCommandBuffer(cmd);
+        VkSubmitInfo si{};
+        si.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        si.commandBufferCount = 1;
+        si.pCommandBuffers = &cmd;
+        vkQueueSubmit(graphicsQueue_, 1, &si, VK_NULL_HANDLE);
+        vkQueueWaitIdle(graphicsQueue_);
+        vkFreeCommandBuffers(device_, commandPool_, 1, &cmd);
+    }
+
+    // --- Staging → GPU buffer upload ---
+    void uploadToDeviceBuffer(const void* data, VkDeviceSize size,
+                               VkBufferUsageFlags usage, VkBuffer& outBuf,
+                               VkDeviceMemory& outMem);
+
     // --- Query helpers ---
     [[nodiscard]] QueueFamilyIndices findQueueFamilies() const;
     [[nodiscard]] SwapchainSupportDetails querySwapchainSupport() const;

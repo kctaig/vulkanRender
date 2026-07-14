@@ -495,6 +495,33 @@ VulkanContext::SwapchainSupportDetails VulkanContext::querySwapchainSupport(
     return details;
 }
 
+void VulkanContext::uploadToDeviceBuffer(const void* data, VkDeviceSize size,
+                                          VkBufferUsageFlags usage,
+                                          VkBuffer& outBuf,
+                                          VkDeviceMemory& outMem) {
+    VkBuffer stagingBuf;
+    VkDeviceMemory stagingMem;
+    createBuffer(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                     VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                 stagingBuf, stagingMem);
+    void* p;
+    vkMapMemory(device_, stagingMem, 0, size, 0, &p);
+    std::memcpy(p, data, static_cast<std::size_t>(size));
+    vkUnmapMemory(device_, stagingMem);
+
+    createBuffer(size, VK_BUFFER_USAGE_TRANSFER_DST_BIT | usage,
+                 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, outBuf, outMem);
+
+    executeOneShot([&](VkCommandBuffer cmd) {
+        VkBufferCopy region{0, 0, size};
+        vkCmdCopyBuffer(cmd, stagingBuf, outBuf, 1, &region);
+    });
+
+    vkDestroyBuffer(device_, stagingBuf, nullptr);
+    vkFreeMemory(device_, stagingMem, nullptr);
+}
+
 // ---------------------------------------------------------------------------
 // Static utilities
 // ---------------------------------------------------------------------------

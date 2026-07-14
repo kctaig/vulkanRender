@@ -20,21 +20,25 @@ bool Renderer::initialize(unsigned int width, unsigned int height) {
     windowWidth_ = width;
     windowHeight_ = height;
 
-    if (!initWindow(width, height)) {
-        return false;
-    }
+    // --- Window ---
+    Window::Desc wd{};
+    wd.title = "Vulkan Renderer";
+    wd.width = width;
+    wd.height = height;
+    wd.onMessage = [this](HWND h, UINT m, WPARAM w, LPARAM l) {
+        return handleInput(h, m, w, l);
+    };
+    if (!window_.create(wd)) return false;
 
     // --- Vulkan core ---
     VulkanContext::CreateInfo ctxInfo{};
-    ctxInfo.windowHandle = windowHandle_;
-    ctxInfo.instanceHandle = instanceHandle_;
+    ctxInfo.windowHandle = static_cast<HWND>(window_.nativeHandle());
+    ctxInfo.instanceHandle = GetModuleHandle(nullptr);
     ctxInfo.initialWidth = width;
     ctxInfo.initialHeight = height;
     ctxInfo.enableValidation = true;
 
-    if (!ctx_.initialize(ctxInfo)) {
-        return false;
-    }
+    if (!ctx_.initialize(ctxInfo)) return false;
 
     // --- Passes ---
     auto fp = std::make_unique<ForwardPass>();
@@ -101,18 +105,9 @@ bool Renderer::initialize(unsigned int width, unsigned int height) {
 }
 
 void Renderer::mainLoop() {
-    if (!ready_)
-        return;
-
-    while (windowRunning_) {
-        if (!processWindowMessages())
-            break;
-        drawFrame();
-    }
-
-    if (ctx_.device() != VK_NULL_HANDLE) {
-        vkDeviceWaitIdle(ctx_.device());
-    }
+    if (!ready_) return;
+    while (window_.pumpMessages()) drawFrame();
+    if (ctx_.device() != VK_NULL_HANDLE) vkDeviceWaitIdle(ctx_.device());
 }
 
 void Renderer::shutdown() {
@@ -146,64 +141,8 @@ void Renderer::shutdown() {
     // VulkanContext cleans up commandPool, device, surface, instance
     ctx_.shutdown();
 
-    if (windowHandle_ != nullptr) {
-        DestroyWindow(windowHandle_);
-        windowHandle_ = nullptr;
-    }
-
+    window_.close();
     ready_ = false;
-}
-
-// ---------------------------------------------------------------------------
-// Window
-// ---------------------------------------------------------------------------
-
-bool Renderer::initWindow(unsigned int width, unsigned int height) {
-    instanceHandle_ = GetModuleHandle(nullptr);
-
-    WNDCLASSEX wc{};
-    wc.cbSize = sizeof(WNDCLASSEX);
-    wc.style = CS_HREDRAW | CS_VREDRAW;
-    wc.lpfnWndProc = Renderer::WindowProc;
-    wc.hInstance = instanceHandle_;
-    wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
-    wc.lpszClassName = "VulkanRendererWindowClass";
-
-    if (RegisterClassEx(&wc) == 0) {
-        DWORD err = GetLastError();
-        if (err != ERROR_CLASS_ALREADY_EXISTS)
-            return false;
-    }
-
-    RECT rect{0, 0, static_cast<LONG>(width), static_cast<LONG>(height)};
-    AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, FALSE);
-
-    windowHandle_ = CreateWindowExA(
-        0, wc.lpszClassName, "Vulkan Renderer", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT, CW_USEDEFAULT,
-        rect.right - rect.left, rect.bottom - rect.top, nullptr, nullptr, instanceHandle_, this
-    );
-
-    if (windowHandle_ == nullptr) {
-        std::cerr << "[Renderer] CreateWindowExA failed: " << GetLastError() << "\n";
-        return false;
-    }
-
-    ShowWindow(windowHandle_, SW_SHOWDEFAULT);
-    UpdateWindow(windowHandle_);
-    return true;
-}
-
-bool Renderer::processWindowMessages() {
-    MSG msg{};
-    while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
-        if (msg.message == WM_QUIT) {
-            windowRunning_ = false;
-            return false;
-        }
-        TranslateMessage(&msg);
-        DispatchMessage(&msg);
-    }
-    return windowRunning_;
 }
 
 // ---------------------------------------------------------------------------
@@ -287,8 +226,7 @@ void Renderer::drawFrame() {
 
 void Renderer::recreateSwapchain() {
     while (windowWidth_ == 0 || windowHeight_ == 0) {
-        if (!processWindowMessages())
-            return;
+        if (!window_.pumpMessages()) return;
     }
 
     ctx_.setFramebufferSize(windowWidth_, windowHeight_);
@@ -320,28 +258,10 @@ void Renderer::recreateSwapchain() {
     imagesInFlight_.assign(ctx_.swapchainImageCount(), VK_NULL_HANDLE);
 }
 
-// ---------------------------------------------------------------------------
-// Window procedure
-// ---------------------------------------------------------------------------
-
-LRESULT CALLBACK Renderer::WindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-    Renderer* r = nullptr;
-    if (msg == WM_NCCREATE) {
-        auto* cs = reinterpret_cast<CREATESTRUCT*>(lParam);
-        r = static_cast<Renderer*>(cs->lpCreateParams);
-        SetWindowLongPtr(hWnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(r));
-    } else {
-        r = reinterpret_cast<Renderer*>(GetWindowLongPtr(hWnd, GWLP_USERDATA));
-    }
-    if (r != nullptr)
-        return r->handleWindowMessage(hWnd, msg, wParam, lParam);
-    return DefWindowProc(hWnd, msg, wParam, lParam);
-}
-
-LRESULT Renderer::handleWindowMessage(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+LRESULT Renderer::handleInput(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
         case WM_CLOSE:
-            windowRunning_ = false;
+            window_.close();
             PostQuitMessage(0);
             return 0;
         case WM_SIZE:

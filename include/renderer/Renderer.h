@@ -13,6 +13,7 @@
 #include <vulkan/vulkan.h>
 
 #include "core/VulkanContext.h"
+#include "core/Window.h"
 #include "renderer/RenderPass.h"
 #include "scene/Scene.h"
 
@@ -28,27 +29,22 @@ class Renderer {
     void shutdown();
 
   private:
-    bool initWindow(unsigned int width, unsigned int height);
-    bool processWindowMessages();
+    LRESULT handleInput(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
     void drawFrame();
     void recreateSwapchain();
 
-    static LRESULT CALLBACK WindowProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
-    LRESULT handleWindowMessage(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
-
+    Window window_;
     VulkanContext ctx_;
     Scene scene_;
     std::vector<std::unique_ptr<RenderPass>> passes_;
 
-    HWND windowHandle_ = nullptr;
-    HINSTANCE instanceHandle_ = nullptr;
-    bool windowRunning_ = true;
-
+    // Input state
     bool rightDragActive_ = false;
     bool leftDragActive_ = false;
     POINT lastMousePosition_{0, 0};
     bool keys_[256]{};
 
+    // Sync
     std::array<VkSemaphore, RenderPass::kMaxFramesInFlight> imageAvailableSemaphores_{};
     std::vector<VkSemaphore> renderFinishedSemaphores_;
     std::array<VkFence, RenderPass::kMaxFramesInFlight> inFlightFences_{};
@@ -59,7 +55,6 @@ class Renderer {
     unsigned int windowWidth_ = 1600;
     unsigned int windowHeight_ = 900;
     bool framebufferResized_ = false;
-
     bool ready_ = false;
 };
 

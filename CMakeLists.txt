@@ -42,18 +42,24 @@ endif()
 set(VR_SOURCES
     src/main.cpp
     src/core/Application.cpp
+    src/core/Window.cpp
     src/scene/AssetManager.cpp
     src/renderer/Renderer.cpp
     src/core/VulkanContext.cpp
     src/renderer/ForwardPass.cpp
+    src/renderer/PipelineBuilder.cpp
+    src/renderer/RenderPass.cpp
 )
 
 set(VR_HEADERS
     include/core/Application.h
     include/core/VulkanContext.h
+    include/core/Window.h
     include/renderer/RenderPass.h
+    include/renderer/DescriptorWriter.h
     include/renderer/Renderer.h
     include/renderer/ForwardPass.h
+    include/renderer/PipelineBuilder.h
     include/scene/AssetManager.h
     include/scene/Camera.h
     include/scene/Scene.h

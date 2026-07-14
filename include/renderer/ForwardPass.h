@@ -15,8 +15,6 @@
 
 namespace vr {
 
-class Scene;
-
 class ForwardPass : public RenderPass {
   public:
     struct Vertex {
@@ -42,41 +40,25 @@ class ForwardPass : public RenderPass {
     void onSwapchainResize(VulkanContext& ctx) override;
     void shutdown() override;
 
-    // --- Scene ---
-    void setScene(Scene& scene) { scene_ = &scene; }
-
   private:
-    void createRenderPass(VulkanContext& ctx);
     void createDescriptorSetLayout(VulkanContext& ctx);
     void createGraphicsPipeline(VulkanContext& ctx);
-    void createDepthResources(VulkanContext& ctx);
-    void createFramebuffers(VulkanContext& ctx);
-    void createDefaultTexture(VulkanContext& ctx);
-    void createUniformBuffers(VulkanContext& ctx);
-    void createDescriptorPool(VulkanContext& ctx);
     void createDescriptorSets(VulkanContext& ctx);
     void updateUniformBuffer(VulkanContext& ctx, std::uint32_t frameIndex,
                              const glm::mat4& model);
 
-    Scene* scene_ = nullptr;
+    UniqueDescriptorSetLayout descriptorSetLayout_;
+    UniquePipelineLayout pipelineLayout_;
+    UniquePipeline graphicsPipeline_;
 
-    VkDescriptorSetLayout descriptorSetLayout_ = VK_NULL_HANDLE;
-    VkPipelineLayout pipelineLayout_ = VK_NULL_HANDLE;
-    VkPipeline graphicsPipeline_ = VK_NULL_HANDLE;
+    UniqueImage depthImage_;
 
-    VkImage depthImage_ = VK_NULL_HANDLE;
-    VkDeviceMemory depthImageMemory_ = VK_NULL_HANDLE;
-    VkImageView depthImageView_ = VK_NULL_HANDLE;
-
-    std::array<VkBuffer, kMaxFramesInFlight> uniformBuffers_{};
-    std::array<VkDeviceMemory, kMaxFramesInFlight> uniformBuffersMemory_{};
+    std::array<UniqueBuffer, kMaxFramesInFlight> uniformBuffers_{};
     VkDescriptorPool descriptorPool_ = VK_NULL_HANDLE;
     std::array<VkDescriptorSet, kMaxFramesInFlight> descriptorSets_{};
 
-    VkImage textureImage_ = VK_NULL_HANDLE;
-    VkDeviceMemory textureImageMemory_ = VK_NULL_HANDLE;
-    VkImageView textureImageView_ = VK_NULL_HANDLE;
-    VkSampler textureSampler_ = VK_NULL_HANDLE;
+    UniqueImage textureImage_;
+    UniqueSampler textureSampler_;
 };
 
 }  // namespace vr
