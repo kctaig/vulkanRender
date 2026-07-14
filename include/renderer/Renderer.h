@@ -47,6 +47,7 @@ class Renderer {
     bool rightDragActive_ = false;
     bool leftDragActive_ = false;
     POINT lastMousePosition_{0, 0};
+    bool keys_[256]{};
 
     std::array<VkSemaphore, RenderPass::kMaxFramesInFlight> imageAvailableSemaphores_{};
     std::vector<VkSemaphore> renderFinishedSemaphores_;

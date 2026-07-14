@@ -307,8 +307,6 @@ std::uint32_t AssetManager::textureCount() const {
 // ===================================================================
 
 void AssetManager::shutdown(VkDevice device) {
-    std::cout << "[AssetManager] Shutting down " << meshes_.size()
-              << " meshes, " << textures_.size() << " textures" << std::endl;
     for (auto& t : textures_) {
         if (t.sampler != VK_NULL_HANDLE)
             vkDestroySampler(device, t.sampler, nullptr);

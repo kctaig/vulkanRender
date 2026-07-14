@@ -84,14 +84,6 @@ void ForwardPass::record(VkCommandBuffer cmd, std::uint32_t frameIndex,
 
     // Bind first available texture from scene assets, fallback to default
     if (scene_ != nullptr && scene_->assets.textureCount() > 0) {
-        static bool once = false;
-        if (!once) {
-            once = true;
-            const auto& tex = scene_->assets.texture(0);
-            std::cout << "[ForwardPass] Binding scene texture: view=" << tex.view
-                      << " sampler=" << tex.sampler
-                      << " (" << tex.width << "x" << tex.height << ")" << std::endl;
-        }
         const auto& tex = scene_->assets.texture(0);
         VkDescriptorImageInfo imgInfo{};
         imgInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -152,8 +144,6 @@ void ForwardPass::onSwapchainResize(VulkanContext& ctx) {
 }
 
 void ForwardPass::shutdown() {
-    std::cout << "[ForwardPass] Shutdown begin, renderPass=" << renderPass_
-              << std::endl;
     for (auto fb : swapchainFramebuffers_)
         vkDestroyFramebuffer(ctx_->device(), fb, nullptr);
     swapchainFramebuffers_.clear();
@@ -229,7 +219,6 @@ void ForwardPass::createRenderPass(VulkanContext& ctx) {
     info.pDependencies = &dep;
     if (vkCreateRenderPass(ctx.device(), &info, nullptr, &renderPass_) != VK_SUCCESS)
         throw std::runtime_error("vkCreateRenderPass failed");
-    std::cout << "[ForwardPass] createRenderPass -> " << renderPass_ << std::endl;
 }
 
 void ForwardPass::createDepthResources(VulkanContext& ctx) {
@@ -433,14 +422,8 @@ void ForwardPass::updateUniformBuffer(VulkanContext& ctx, std::uint32_t fi,
     UniformBufferObject ubo{};
     ubo.model = model;
     if (scene_ != nullptr) {
-        auto& cam = scene_->camera;
-        cam.setPerspective(
-            glm::radians(45.0f),
-            static_cast<float>(ctx.swapchainExtent().width) /
-                static_cast<float>(ctx.swapchainExtent().height),
-            0.1f, 1000.0f);
-        ubo.view = cam.viewMatrix();
-        ubo.projection = cam.projectionMatrix();
+        ubo.view = scene_->camera.viewMatrix();
+        ubo.projection = scene_->camera.projectionMatrix();
     }
     ubo.projection[1][1] *= -1.0f;
 

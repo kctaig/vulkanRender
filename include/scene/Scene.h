@@ -2,7 +2,6 @@
 
 #include <cmath>
 #include <cstdint>
-#include <iostream>
 #include <limits>
 #include <glm/glm.hpp>
 #include <string>
@@ -35,6 +34,7 @@ class Scene {
 
     Camera camera;
     AssetManager assets;
+    float modelRadius = 1.0f;
 
     std::vector<Instance> instances;
     std::vector<DirectionalLight> directionalLights;
@@ -67,16 +67,12 @@ class Scene {
         float distX = halfExt.x / std::tan(fovX * 0.5f);
         float distZ = halfExt.z / std::tan(fovX * 0.5f);
         float distance = std::max({distX, distY, distZ}) * 1.1f;
-
-        std::cout << "[Scene] Bounds: (" << bbMin.x << "," << bbMin.y << ","
-                  << bbMin.z << ") -> (" << bbMax.x << "," << bbMax.y << ","
-                  << bbMax.z << ")" << std::endl;
-        std::cout << "[Scene] Center=(" << center.x << "," << center.y << ","
-                  << center.z << ") distance=" << distance << std::endl;
+        float radius = glm::length(glm::vec3{halfExt.x, halfExt.y, halfExt.z});
+        modelRadius = std::max(radius, 0.01f);
 
         camera.setTarget(center);
         camera.setDistance(distance);
-        camera.setMaxDistance(distance * 10.0f);
+        camera.setModelScale(modelRadius);
 
         for (std::size_t i = 0; i < m.meshIds.size(); ++i) {
             instances.push_back({m.meshIds[i], glm::mat4(1.0f)});

@@ -89,6 +89,13 @@ bool Renderer::initialize(unsigned int width, unsigned int height) {
         imagesInFlight_.assign(n, VK_NULL_HANDLE);
     }
 
+    // Camera projection — set once, updated on resize
+    scene_.camera.setPerspective(
+        glm::radians(45.0f),
+        static_cast<float>(ctx_.swapchainExtent().width) /
+            static_cast<float>(ctx_.swapchainExtent().height),
+        0.01f, 100000.0f);
+
     ready_ = true;
     return true;
 }
@@ -109,7 +116,6 @@ void Renderer::mainLoop() {
 }
 
 void Renderer::shutdown() {
-    std::cout << "[Renderer] Shutdown begin" << std::endl;
     if (ctx_.device() != VK_NULL_HANDLE) {
         vkDeviceWaitIdle(ctx_.device());
     }
@@ -227,6 +233,12 @@ void Renderer::drawFrame() {
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     vkBeginCommandBuffer(cmd, &beginInfo);
 
+    // WASD camera movement (small delta because keys fire every frame)
+    if (keys_['W']) scene_.camera.dolly(0.1f);
+    if (keys_['S']) scene_.camera.dolly(-0.1f);
+    if (keys_['A']) scene_.camera.pan(-0.1f, 0);
+    if (keys_['D']) scene_.camera.pan(0.1f, 0);
+
     // Execute all passes
     for (auto& pass : passes_) {
         pass->record(cmd, currentFrame_, imageIndex);
@@ -286,6 +298,13 @@ void Renderer::recreateSwapchain() {
     for (auto& pass : passes_) {
         pass->onSwapchainResize(ctx_);
     }
+
+    // Update camera projection for new extent
+    scene_.camera.setPerspective(
+        glm::radians(45.0f),
+        static_cast<float>(ctx_.swapchainExtent().width) /
+            static_cast<float>(ctx_.swapchainExtent().height),
+        0.01f, 100000.0f);
 
     // Recreate per-image semaphores
     for (auto& sem : renderFinishedSemaphores_) {
@@ -352,18 +371,24 @@ LRESULT Renderer::handleWindowMessage(HWND hWnd, UINT msg, WPARAM wParam, LPARAM
             lastMousePosition_ = cur;
 
             if (rightDragActive_) {
-                scene_.camera.rotate(dx * 0.01f, -dy * 0.01f);
+                scene_.camera.rotate(dx, -dy);
             }
             if (leftDragActive_) {
-                scene_.camera.pan(glm::vec2(-dx * 0.005f, dy * 0.005f));
+                scene_.camera.pan(-dx, dy);
             }
             return 0;
         }
         case WM_MOUSEWHEEL: {
             short delta = GET_WHEEL_DELTA_WPARAM(wParam);
-            scene_.camera.zoom(static_cast<float>(delta) / static_cast<float>(WHEEL_DELTA) * 0.2f);
+            scene_.camera.dolly(static_cast<float>(delta) / static_cast<float>(WHEEL_DELTA));
             return 0;
         }
+        case WM_KEYDOWN:
+            if (wParam < 256) keys_[wParam] = true;
+            return 0;
+        case WM_KEYUP:
+            if (wParam < 256) keys_[wParam] = false;
+            return 0;
         default:
             break;
     }
