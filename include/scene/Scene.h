@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <string_view>
 #include <glm/glm.hpp>
 #include <string>
 #include <vector>
@@ -42,7 +43,7 @@ class Scene {
 
     /// One-shot import: loads model + textures into assets, adds an instance.
     /// Auto-adjusts camera to frame the model.
-    void importModel(VulkanContext& ctx, const std::string& path) {
+    void importModel(VulkanContext& ctx, std::string_view path) {
         auto m = assets.importModel(ctx, path);
         if (m.meshIds.empty()) return;
 

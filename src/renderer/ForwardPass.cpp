@@ -13,25 +13,21 @@
 
 namespace vr {
 
-// ---------------------------------------------------------------------------
-// Vertex descriptor (static)
-// ---------------------------------------------------------------------------
-
 VkVertexInputBindingDescription ForwardPass::Vertex::getBindingDescription() {
-    VkVertexInputBindingDescription d{};
-    d.binding = 0;
-    d.stride = sizeof(Vertex);
-    d.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-    return d;
+    VkVertexInputBindingDescription binding{};
+    binding.binding = 0;
+    binding.stride = sizeof(Vertex);
+    binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+    return binding;
 }
 
 std::array<VkVertexInputAttributeDescription, 3>
 ForwardPass::Vertex::getAttributeDescriptions() {
-    std::array<VkVertexInputAttributeDescription, 3> a{};
-    a[0] = {0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, position)};
-    a[1] = {1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, normal)};
-    a[2] = {2, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(Vertex, uv)};
-    return a;
+    std::array<VkVertexInputAttributeDescription, 3> attributes{};
+    attributes[0] = {0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, position)};
+    attributes[1] = {1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(Vertex, normal)};
+    attributes[2] = {2, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(Vertex, uv)};
+    return attributes;
 }
 
 // ===================================================================
@@ -41,49 +37,49 @@ ForwardPass::Vertex::getAttributeDescriptions() {
 bool ForwardPass::initialize(VulkanContext& ctx) {
     ctx_ = &ctx;
     try {
-        auto df = ctx.findDepthFormat();
+        auto depthFormat = ctx.findDepthFormat();
 
-        VkAttachmentDescription color{};
-        color.format = ctx.swapchainFormat();
-        color.samples = VK_SAMPLE_COUNT_1_BIT;
-        color.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-        color.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        color.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+        VkAttachmentDescription colorAttachment{};
+        colorAttachment.format = ctx.swapchainFormat();
+        colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+        colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
-        VkAttachmentDescription depth{};
-        depth.format = df;
-        depth.samples = VK_SAMPLE_COUNT_1_BIT;
-        depth.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        depth.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        depth.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        depth.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        VkAttachmentDescription depthAttachment{};
+        depthAttachment.format = depthFormat;
+        depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+        depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
-        VkAttachmentReference cr{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
-        VkAttachmentReference dr{1,
-                                  VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
-        VkSubpassDescription sp{};
-        sp.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-        sp.colorAttachmentCount = 1;
-        sp.pColorAttachments = &cr;
-        sp.pDepthStencilAttachment = &dr;
+        VkAttachmentReference colorRef{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+        VkAttachmentReference depthRef{1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
 
-        VkSubpassDependency dep{};
-        dep.srcSubpass = VK_SUBPASS_EXTERNAL;
-        dep.dstSubpass = 0;
-        dep.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
-                           VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-        dep.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
-                           VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-        dep.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
-                            VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        VkSubpassDescription subpass{};
+        subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+        subpass.colorAttachmentCount = 1;
+        subpass.pColorAttachments = &colorRef;
+        subpass.pDepthStencilAttachment = &depthRef;
 
-        createRenderPass(ctx, {color, depth}, {sp}, {dep});
+        VkSubpassDependency dependency{};
+        dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+        dependency.dstSubpass = 0;
+        dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+                                  VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+        dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+                                  VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+        dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+                                   VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
+        createRenderPass(ctx, {colorAttachment, depthAttachment}, {subpass}, {dependency});
         createDepth(ctx, depthImage_);
         createFramebuffers(ctx, depthImage_.view());
         createDefaultTexture(ctx, textureImage_, textureSampler_);
         createDescriptorSetLayout(ctx);
-        createUniformBuffers<UniformBufferObject>(ctx, uniformBuffers_);
+        createUniformBuffers<Uniforms>(ctx, uniformBuffers_);
         createDescriptorPool(ctx,
                               {{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, kMaxFramesInFlight},
                                {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
@@ -100,53 +96,53 @@ bool ForwardPass::initialize(VulkanContext& ctx) {
 
 void ForwardPass::record(VkCommandBuffer cmd, std::uint32_t frameIndex,
                           std::uint32_t imageIndex) {
-    std::array<VkClearValue, 2> clears{};
-    clears[0].color = {{0.05f, 0.07f, 0.11f, 1.0f}};
-    clears[1].depthStencil = {1.0f, 0};
+    std::array<VkClearValue, 2> clearValues{};
+    clearValues[0].color = {{0.05f, 0.07f, 0.11f, 1.0f}};
+    clearValues[1].depthStencil = {1.0f, 0};
 
-    VkRenderPassBeginInfo rp{};
-    rp.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    rp.renderPass = renderPass_;
-    rp.framebuffer = swapchainFramebuffers_[imageIndex];
-    rp.renderArea = {{0, 0}, ctx_->swapchainExtent()};
-    rp.clearValueCount = static_cast<std::uint32_t>(clears.size());
-    rp.pClearValues = clears.data();
+    VkRenderPassBeginInfo passInfo{};
+    passInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    passInfo.renderPass = renderPass_;
+    passInfo.framebuffer = swapchainFramebuffers_[imageIndex];
+    passInfo.renderArea = {{0, 0}, ctx_->swapchainExtent()};
+    passInfo.clearValueCount = static_cast<std::uint32_t>(clearValues.size());
+    passInfo.pClearValues = clearValues.data();
 
-    vkCmdBeginRenderPass(cmd, &rp, VK_SUBPASS_CONTENTS_INLINE);
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline_);
+    vkCmdBeginRenderPass(cmd, &passInfo, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_);
 
-    VkViewport vp{0, 0, static_cast<float>(ctx_->swapchainExtent().width),
-                   static_cast<float>(ctx_->swapchainExtent().height), 0, 1};
-    vkCmdSetViewport(cmd, 0, 1, &vp);
+    VkViewport viewport{0, 0, static_cast<float>(ctx_->swapchainExtent().width),
+                         static_cast<float>(ctx_->swapchainExtent().height), 0, 1};
+    vkCmdSetViewport(cmd, 0, 1, &viewport);
     VkRect2D scissor{{0, 0}, ctx_->swapchainExtent()};
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
     if (scene_ != nullptr && scene_->assets.textureCount() > 0) {
         const auto& tex = scene_->assets.texture(0);
-        VkDescriptorImageInfo imgInfo{};
-        imgInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        imgInfo.imageView = tex.view;
-        imgInfo.sampler = tex.sampler;
-        VkWriteDescriptorSet w{};
-        w.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        w.dstSet = descriptorSets_[frameIndex];
-        w.dstBinding = 1;
-        w.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        w.descriptorCount = 1;
-        w.pImageInfo = &imgInfo;
-        vkUpdateDescriptorSets(ctx_->device(), 1, &w, 0, nullptr);
+        VkDescriptorImageInfo imageInfo{};
+        imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        imageInfo.imageView = tex.view;
+        imageInfo.sampler = tex.sampler;
+        VkWriteDescriptorSet textureWrite{};
+        textureWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        textureWrite.dstSet = descriptorSets_[frameIndex];
+        textureWrite.dstBinding = 1;
+        textureWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        textureWrite.descriptorCount = 1;
+        textureWrite.pImageInfo = &imageInfo;
+        vkUpdateDescriptorSets(ctx_->device(), 1, &textureWrite, 0, nullptr);
     }
 
     if (scene_ != nullptr) {
-        for (const auto& inst : scene_->instances) {
-            const auto& mesh = scene_->assets.mesh(inst.modelId);
-            updateUniformBuffer(*ctx_, frameIndex, inst.transform);
+        for (const auto& instance : scene_->instances) {
+            const auto& mesh = scene_->assets.mesh(instance.modelId);
+            updateUniformBuffer(*ctx_, frameIndex, instance.transform);
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                     pipelineLayout_, 0, 1,
                                     &descriptorSets_[frameIndex], 0, nullptr);
-            VkBuffer vbs[] = {mesh.vertexBuffer};
-            VkDeviceSize off[] = {0};
-            vkCmdBindVertexBuffers(cmd, 0, 1, vbs, off);
+            VkBuffer vertexBuffers[] = {mesh.vertexBuffer};
+            VkDeviceSize offsets[] = {0};
+            vkCmdBindVertexBuffers(cmd, 0, 1, vertexBuffers, offsets);
             vkCmdBindIndexBuffer(cmd, mesh.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
             vkCmdDrawIndexed(cmd, mesh.indexCount, 1, 0, 0, 0);
         }
@@ -160,46 +156,51 @@ void ForwardPass::onSwapchainResize(VulkanContext& ctx) {
         vkDestroyFramebuffer(ctx_->device(), fb, nullptr);
     swapchainFramebuffers_.clear();
     depthImage_.reset();
-    graphicsPipeline_.reset();
+    pipeline_.reset();
     pipelineLayout_.reset();
     if (renderPass_) {
         vkDestroyRenderPass(ctx_->device(), renderPass_, nullptr);
         renderPass_ = VK_NULL_HANDLE;
     }
 
-    auto df = ctx.findDepthFormat();
-    VkAttachmentDescription color{};
-    color.format = ctx.swapchainFormat();
-    color.samples = VK_SAMPLE_COUNT_1_BIT;
-    color.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    color.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    color.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-    VkAttachmentDescription depth{};
-    depth.format = df;
-    depth.samples = VK_SAMPLE_COUNT_1_BIT;
-    depth.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    depth.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    depth.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    depth.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-    VkAttachmentReference cr{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
-    VkAttachmentReference dr{1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
-    VkSubpassDescription sp{};
-    sp.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    sp.colorAttachmentCount = 1;
-    sp.pColorAttachments = &cr;
-    sp.pDepthStencilAttachment = &dr;
-    VkSubpassDependency dep{};
-    dep.srcSubpass = VK_SUBPASS_EXTERNAL;
-    dep.dstSubpass = 0;
-    dep.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
-                       VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-    dep.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
-                       VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-    dep.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
-                        VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    auto depthFormat = ctx.findDepthFormat();
 
-    createRenderPass(ctx, {color, depth}, {sp}, {dep});
+    VkAttachmentDescription colorAttachment{};
+    colorAttachment.format = ctx.swapchainFormat();
+    colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+    VkAttachmentDescription depthAttachment{};
+    depthAttachment.format = depthFormat;
+    depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+    VkAttachmentReference colorRef{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+    VkAttachmentReference depthRef{1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
+
+    VkSubpassDescription subpass{};
+    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpass.colorAttachmentCount = 1;
+    subpass.pColorAttachments = &colorRef;
+    subpass.pDepthStencilAttachment = &depthRef;
+
+    VkSubpassDependency dependency{};
+    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependency.dstSubpass = 0;
+    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+                              VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+                              VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+                               VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
+    createRenderPass(ctx, {colorAttachment, depthAttachment}, {subpass}, {dependency});
     createDepth(ctx, depthImage_);
     createFramebuffers(ctx, depthImage_.view());
     createGraphicsPipeline(ctx);
@@ -221,33 +222,34 @@ void ForwardPass::shutdown() {
 // ===================================================================
 
 void ForwardPass::createDescriptorSetLayout(VulkanContext& ctx) {
-    std::array<VkDescriptorSetLayoutBinding, 2> b{};
-    b[0] = {0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1,
-            VK_SHADER_STAGE_VERTEX_BIT, nullptr};
-    b[1] = {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1,
-            VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
-    VkDescriptorSetLayoutCreateInfo info{};
-    info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    info.bindingCount = static_cast<std::uint32_t>(b.size());
-    info.pBindings = b.data();
-    if (vkCreateDescriptorSetLayout(ctx.device(), &info, nullptr,
+    std::array<VkDescriptorSetLayoutBinding, 2> bindings{};
+    bindings[0] = {0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1,
+                   VK_SHADER_STAGE_VERTEX_BIT, nullptr};
+    bindings[1] = {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1,
+                   VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
+
+    VkDescriptorSetLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = static_cast<std::uint32_t>(bindings.size());
+    layoutInfo.pBindings = bindings.data();
+    if (vkCreateDescriptorSetLayout(ctx.device(), &layoutInfo, nullptr,
                                      descriptorSetLayout_.put(ctx.device())) !=
         VK_SUCCESS)
         throw std::runtime_error("vkCreateDescriptorSetLayout failed");
 }
 
 void ForwardPass::createGraphicsPipeline(VulkanContext& ctx) {
-    std::string sd = VR_SHADER_DIR;
+    std::string shaderDir = VR_SHADER_DIR;
     PipelineBuilder builder(ctx);
-    auto pipe = builder.vertexShader(sd + "/forwardPass.vert.spv")
-                     .fragmentShader(sd + "/forwardPass.frag.spv")
+    auto pipe = builder.vertexShader(shaderDir + "/forwardPass.vert.spv")
+                     .fragmentShader(shaderDir + "/forwardPass.frag.spv")
                      .vertexInput<Vertex>()
                      .depthTest(true)
                      .cullMode(VK_CULL_MODE_BACK_BIT)
                      .colorAttachment(ctx.swapchainFormat())
                      .descriptorSetLayout(descriptorSetLayout_)
                      .build(renderPass_);
-    graphicsPipeline_ =
+    pipeline_ =
         UniquePipeline(pipe, DeleterPipeline, ctx.device());
     pipelineLayout_ = UniquePipelineLayout(builder.pipelineLayout(),
                                             DeleterPipelineLayout, ctx.device());
@@ -257,27 +259,27 @@ void ForwardPass::createGraphicsPipeline(VulkanContext& ctx) {
 void ForwardPass::createDescriptorSets(VulkanContext& ctx) {
     for (std::uint32_t i = 0; i < kMaxFramesInFlight; ++i) {
         DescriptorWriter(ctx.device())
-            .bindBuffer(0, uniformBuffers_[i], sizeof(UniformBufferObject))
+            .bindBuffer(0, uniformBuffers_[i], sizeof(Uniforms))
             .bindSampler(1, textureImage_.view(), textureSampler_)
             .build(descriptorSetLayout_, descriptorPool_, &descriptorSets_[i]);
     }
 }
 
-void ForwardPass::updateUniformBuffer(VulkanContext& ctx, std::uint32_t fi,
+void ForwardPass::updateUniformBuffer(VulkanContext& ctx, std::uint32_t frameIndex,
                                        const glm::mat4& model) {
-    UniformBufferObject ubo{};
-    ubo.model = model;
+    Uniforms uniforms{};
+    uniforms.model = model;
     if (scene_ != nullptr) {
-        ubo.view = scene_->camera.viewMatrix();
-        ubo.projection = scene_->camera.projectionMatrix();
+        uniforms.view = scene_->camera.viewMatrix();
+        uniforms.projection = scene_->camera.projectionMatrix();
     }
-    ubo.projection[1][1] *= -1.0f;
+    uniforms.projection[1][1] *= -1.0f;
 
-    void* d;
-    vkMapMemory(ctx.device(), uniformBuffers_[fi].memory(), 0, sizeof(ubo),
-                0, &d);
-    std::memcpy(d, &ubo, sizeof(ubo));
-    vkUnmapMemory(ctx.device(), uniformBuffers_[fi].memory());
+    void* mappedData = nullptr;
+    vkMapMemory(ctx.device(), uniformBuffers_[frameIndex].memory(), 0,
+                sizeof(Uniforms), 0, &mappedData);
+    std::memcpy(mappedData, &uniforms, sizeof(Uniforms));
+    vkUnmapMemory(ctx.device(), uniformBuffers_[frameIndex].memory());
 }
 
 }  // namespace vr

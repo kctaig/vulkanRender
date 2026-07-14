@@ -1,7 +1,9 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <vulkan/vulkan.h>
@@ -64,22 +66,23 @@ class AssetManager {
   public:
     /// Import a 3D model file (OBJ, FBX, glTF, etc.) and all its textures.
     /// Returns handles into the internal mesh/material/texture pools.
-    ImportedModel importModel(VulkanContext& ctx, const std::string& filePath);
+    [[nodiscard]] ImportedModel importModel(VulkanContext& ctx, std::string_view filePath);
 
-    const GPUMesh& mesh(std::uint32_t id) const;
-    const MaterialDef& material(std::uint32_t id) const;
-    const GPUTexture& texture(std::uint32_t id) const;
+    [[nodiscard]] const GPUMesh& mesh(std::uint32_t id) const;
+    [[nodiscard]] const MaterialDef& material(std::uint32_t id) const;
+    [[nodiscard]] const GPUTexture& texture(std::uint32_t id) const;
 
-    std::uint32_t meshCount() const;
-    std::uint32_t materialCount() const;
-    std::uint32_t textureCount() const;
+    [[nodiscard]] std::uint32_t meshCount() const;
+    [[nodiscard]] std::uint32_t materialCount() const;
+    [[nodiscard]] std::uint32_t textureCount() const;
 
     void shutdown(VkDevice device);
 
   private:
-    std::uint32_t loadTexture(VulkanContext& ctx, const std::string& path);
-    std::uint32_t addMaterial(const MaterialDef& mat);
-    std::uint32_t uploadMesh(VulkanContext& ctx, const float* vertices,
+    [[nodiscard]] std::optional<std::uint32_t> loadTexture(VulkanContext& ctx,
+                                                            std::string_view path);
+    [[nodiscard]] std::uint32_t addMaterial(const MaterialDef& mat);
+    [[nodiscard]] std::uint32_t uploadMesh(VulkanContext& ctx, const float* vertices,
         std::uint32_t vertexCount, const std::uint32_t* indices,
         std::uint32_t indexCount);
 

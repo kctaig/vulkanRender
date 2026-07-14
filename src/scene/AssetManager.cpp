@@ -132,11 +132,11 @@ void createImageAndUpload(VulkanContext& ctx, std::uint32_t w,
 // ===================================================================
 
 ImportedModel AssetManager::importModel(VulkanContext& ctx,
-                                        const std::string& filePath) {
+                                        std::string_view filePath) {
 #ifdef VR_HAS_ASSIMP
     Assimp::Importer importer;
     const aiScene* scene =
-        importer.ReadFile(filePath,
+        importer.ReadFile(std::string(filePath),
                           aiProcess_Triangulate | aiProcess_GenNormals |
                               aiProcess_JoinIdenticalVertices |
                               aiProcess_PreTransformVertices |
@@ -172,36 +172,33 @@ ImportedModel AssetManager::importModel(VulkanContext& ctx,
         mat.roughness = roughness;
 
         // Helper: try multiple paths for a texture
-        auto tryLoadTexture = [&](aiTextureType type) -> std::uint32_t {
+        auto tryLoadTexture = [&](aiTextureType type) -> std::optional<std::uint32_t> {
             aiString texPath;
             if (aiMat->GetTexture(type, 0, &texPath) != AI_SUCCESS)
-                return UINT32_MAX;
+                return std::nullopt;
 
             std::filesystem::path relPath(texPath.C_Str());
             std::string filename = relPath.filename().string();
 
-            // Try: model dir + relative path
-            auto fullPath = (baseDir / relPath).string();
-            auto id = loadTexture(ctx, fullPath);
-            if (id != UINT32_MAX) return id;
+            auto id = loadTexture(ctx, (baseDir / relPath).string());
+            if (id) return id;
 
-            // Try: model dir + filename only
-            fullPath = (baseDir / filename).string();
-            id = loadTexture(ctx, fullPath);
-            if (id != UINT32_MAX) return id;
+            id = loadTexture(ctx, (baseDir / filename).string());
+            if (id) return id;
 
-            // Try: relative path from cwd
-            id = loadTexture(ctx, relPath.string());
-            return id;
+            return loadTexture(ctx, relPath.string());
         };
 
-        mat.albedoTexture = tryLoadTexture(aiTextureType_DIFFUSE);
-        if (mat.albedoTexture == UINT32_MAX) {
+        if (auto texId = tryLoadTexture(aiTextureType_DIFFUSE)) {
+            mat.albedoTexture = *texId;
+        } else {
             std::cout << "[AssetManager] No diffuse texture found for material '"
                       << mat.name << "'" << std::endl;
         }
 
-        mat.normalTexture = tryLoadTexture(aiTextureType_NORMALS);
+        if (auto texId = tryLoadTexture(aiTextureType_NORMALS)) {
+            mat.normalTexture = *texId;
+        }
 
         sceneMaterialIds[i] = addMaterial(mat);
     }
@@ -321,19 +318,20 @@ void AssetManager::shutdown(VkDevice device) {
 // Private
 // ===================================================================
 
-std::uint32_t AssetManager::loadTexture(VulkanContext& ctx,
-                                         const std::string& path) {
+std::optional<std::uint32_t> AssetManager::loadTexture(VulkanContext& ctx,
+                                                        std::string_view path) {
     // Deduplicate by path
     static std::unordered_map<std::string, std::uint32_t> cache;
-    auto it = cache.find(path);
+    std::string pathStr(path);  // string_view → string for map key
+    auto it = cache.find(pathStr);
     if (it != cache.end()) {
         return it->second;
     }
 
     int w = 0, h = 0, ch = 0;
-    stbi_uc* pixels = stbi_load(path.c_str(), &w, &h, &ch, 4);
+    stbi_uc* pixels = stbi_load(pathStr.c_str(), &w, &h, &ch, 4);
     if (pixels == nullptr) {
-        return UINT32_MAX;
+        return std::nullopt;
     }
 
     GPUTexture tex;
@@ -343,9 +341,9 @@ std::uint32_t AssetManager::loadTexture(VulkanContext& ctx,
 
     std::uint32_t id = static_cast<std::uint32_t>(textures_.size());
     textures_.push_back(tex);
-    cache[path] = id;
+    cache[pathStr] = id;
 
-    std::cout << "[AssetManager] Texture loaded: " << path << " (" << w
+    std::cout << "[AssetManager] Texture loaded: " << pathStr << " (" << w
               << "x" << h << ")" << std::endl;
     return id;
 }

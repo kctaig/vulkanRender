@@ -27,13 +27,12 @@ class ForwardPass : public RenderPass {
         getAttributeDescriptions();
     };
 
-    struct UniformBufferObject {
+    struct Uniforms {
         glm::mat4 model = glm::mat4(1.0f);
         glm::mat4 view = glm::mat4(1.0f);
         glm::mat4 projection = glm::mat4(1.0f);
     };
 
-    // --- RenderPass interface ---
     bool initialize(VulkanContext& ctx) override;
     void record(VkCommandBuffer cmd, std::uint32_t frameIndex,
                 std::uint32_t imageIndex) override;
@@ -49,7 +48,7 @@ class ForwardPass : public RenderPass {
 
     UniqueDescriptorSetLayout descriptorSetLayout_;
     UniquePipelineLayout pipelineLayout_;
-    UniquePipeline graphicsPipeline_;
+    UniquePipeline pipeline_;
 
     UniqueImage depthImage_;
 

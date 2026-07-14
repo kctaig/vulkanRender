@@ -42,22 +42,22 @@ class VulkanContext {
     void shutdown();
 
     // --- Core accessors ---
-    VkInstance instance() const;
-    VkPhysicalDevice physicalDevice() const;
-    VkDevice device() const;
-    VkQueue graphicsQueue() const;
-    VkQueue presentQueue() const;
-    VkSurfaceKHR surface() const;
-    VkCommandPool commandPool() const;
-    VkSwapchainKHR swapchain() const;
+    [[nodiscard]] VkInstance instance() const;
+    [[nodiscard]] VkPhysicalDevice physicalDevice() const;
+    [[nodiscard]] VkDevice device() const;
+    [[nodiscard]] VkQueue graphicsQueue() const;
+    [[nodiscard]] VkQueue presentQueue() const;
+    [[nodiscard]] VkSurfaceKHR surface() const;
+    [[nodiscard]] VkCommandPool commandPool() const;
+    [[nodiscard]] VkSwapchainKHR swapchain() const;
 
     // --- Swapchain accessors ---
-    VkFormat swapchainFormat() const;
-    VkExtent2D swapchainExtent() const;
-    std::uint32_t swapchainMinImageCount() const;
-    std::uint32_t swapchainImageCount() const;
-    const std::vector<VkImage>& swapchainImages() const;
-    const std::vector<VkImageView>& swapchainImageViews() const;
+    [[nodiscard]] VkFormat swapchainFormat() const;
+    [[nodiscard]] VkExtent2D swapchainExtent() const;
+    [[nodiscard]] std::uint32_t swapchainMinImageCount() const;
+    [[nodiscard]] std::uint32_t swapchainImageCount() const;
+    [[nodiscard]] const std::vector<VkImage>& swapchainImages() const;
+    [[nodiscard]] const std::vector<VkImageView>& swapchainImageViews() const;
 
     // --- Framebuffer size (for swapchain extent fallback) ---
     void setFramebufferSize(std::uint32_t width, std::uint32_t height);

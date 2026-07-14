@@ -12,64 +12,65 @@ void RenderPass::createRenderPass(
     VulkanContext& ctx,
     const std::vector<VkAttachmentDescription>& attachments,
     const std::vector<VkSubpassDescription>& subpasses,
-    const std::vector<VkSubpassDependency>& deps) {
-    VkRenderPassCreateInfo info{};
-    info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    info.attachmentCount = static_cast<std::uint32_t>(attachments.size());
-    info.pAttachments = attachments.data();
-    info.subpassCount = static_cast<std::uint32_t>(subpasses.size());
-    info.pSubpasses = subpasses.data();
-    info.dependencyCount = static_cast<std::uint32_t>(deps.size());
-    info.pDependencies = deps.data();
-    if (vkCreateRenderPass(ctx.device(), &info, nullptr, &renderPass_) !=
+    const std::vector<VkSubpassDependency>& dependencies) {
+    VkRenderPassCreateInfo createInfo{};
+    createInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+    createInfo.attachmentCount = static_cast<std::uint32_t>(attachments.size());
+    createInfo.pAttachments = attachments.data();
+    createInfo.subpassCount = static_cast<std::uint32_t>(subpasses.size());
+    createInfo.pSubpasses = subpasses.data();
+    createInfo.dependencyCount = static_cast<std::uint32_t>(dependencies.size());
+    createInfo.pDependencies = dependencies.data();
+    if (vkCreateRenderPass(ctx.device(), &createInfo, nullptr, &renderPass_) !=
         VK_SUCCESS)
         throw std::runtime_error("RenderPass: vkCreateRenderPass failed");
 }
 
 void RenderPass::createDepth(VulkanContext& ctx, UniqueImage& outDepth) {
-    auto df = ctx.findDepthFormat();
-    VkImage img;
-    VkDeviceMemory mem;
+    auto depthFormat = ctx.findDepthFormat();
+    VkImage image = VK_NULL_HANDLE;
+    VkDeviceMemory memory = VK_NULL_HANDLE;
     ctx.createImage(ctx.swapchainExtent().width, ctx.swapchainExtent().height,
-                    df, VK_IMAGE_TILING_OPTIMAL,
+                    depthFormat, VK_IMAGE_TILING_OPTIMAL,
                     VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-                    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, img, mem);
-    VkImageAspectFlags af = VK_IMAGE_ASPECT_DEPTH_BIT;
-    if (VulkanContext::hasStencilComponent(df))
-        af |= VK_IMAGE_ASPECT_STENCIL_BIT;
-    VkImageView v = ctx.createImageView(img, df, af);
-    outDepth = UniqueImage(ctx.device(), img, mem, v);
+                    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, image, memory);
+
+    VkImageAspectFlags aspectFlags = VK_IMAGE_ASPECT_DEPTH_BIT;
+    if (VulkanContext::hasStencilComponent(depthFormat))
+        aspectFlags |= VK_IMAGE_ASPECT_STENCIL_BIT;
+    VkImageView view = ctx.createImageView(image, depthFormat, aspectFlags);
+    outDepth = UniqueImage(ctx.device(), image, memory, view);
 }
 
 void RenderPass::createFramebuffers(VulkanContext& ctx,
                                      VkImageView depthView) {
-    const auto& views = ctx.swapchainImageViews();
-    swapchainFramebuffers_.resize(views.size());
-    for (std::size_t i = 0; i < views.size(); ++i) {
-        std::array<VkImageView, 2> att = {views[i], depthView};
-        VkFramebufferCreateInfo fi{};
-        fi.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        fi.renderPass = renderPass_;
-        fi.attachmentCount = static_cast<std::uint32_t>(att.size());
-        fi.pAttachments = att.data();
-        fi.width = ctx.swapchainExtent().width;
-        fi.height = ctx.swapchainExtent().height;
-        fi.layers = 1;
-        if (vkCreateFramebuffer(ctx.device(), &fi, nullptr,
+    const auto& swapchainViews = ctx.swapchainImageViews();
+    swapchainFramebuffers_.resize(swapchainViews.size());
+    for (std::size_t i = 0; i < swapchainViews.size(); ++i) {
+        std::array<VkImageView, 2> attachments = {swapchainViews[i], depthView};
+        VkFramebufferCreateInfo framebufferInfo{};
+        framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        framebufferInfo.renderPass = renderPass_;
+        framebufferInfo.attachmentCount = static_cast<std::uint32_t>(attachments.size());
+        framebufferInfo.pAttachments = attachments.data();
+        framebufferInfo.width = ctx.swapchainExtent().width;
+        framebufferInfo.height = ctx.swapchainExtent().height;
+        framebufferInfo.layers = 1;
+        if (vkCreateFramebuffer(ctx.device(), &framebufferInfo, nullptr,
                                  &swapchainFramebuffers_[i]) != VK_SUCCESS)
             throw std::runtime_error("RenderPass: vkCreateFramebuffer failed");
     }
 }
 
 void RenderPass::createDescriptorPool(
-    VulkanContext& ctx, const std::vector<VkDescriptorPoolSize>& sizes,
+    VulkanContext& ctx, const std::vector<VkDescriptorPoolSize>& poolSizes,
     VkDescriptorPool& outPool) {
-    VkDescriptorPoolCreateInfo info{};
-    info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    info.poolSizeCount = static_cast<std::uint32_t>(sizes.size());
-    info.pPoolSizes = sizes.data();
-    info.maxSets = kMaxFramesInFlight;
-    if (vkCreateDescriptorPool(ctx.device(), &info, nullptr, &outPool) !=
+    VkDescriptorPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.poolSizeCount = static_cast<std::uint32_t>(poolSizes.size());
+    poolInfo.pPoolSizes = poolSizes.data();
+    poolInfo.maxSets = kMaxFramesInFlight;
+    if (vkCreateDescriptorPool(ctx.device(), &poolInfo, nullptr, &outPool) !=
         VK_SUCCESS)
         throw std::runtime_error("RenderPass: vkCreateDescriptorPool failed");
 }
@@ -79,12 +80,12 @@ void RenderPass::allocateDescriptorSets(
     std::array<VkDescriptorSet, kMaxFramesInFlight>& outSets) {
     std::array<VkDescriptorSetLayout, kMaxFramesInFlight> layouts{};
     layouts.fill(layout);
-    VkDescriptorSetAllocateInfo ai{};
-    ai.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    ai.descriptorPool = pool;
-    ai.descriptorSetCount = kMaxFramesInFlight;
-    ai.pSetLayouts = layouts.data();
-    if (vkAllocateDescriptorSets(ctx_->device(), &ai, outSets.data()) !=
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = pool;
+    allocInfo.descriptorSetCount = kMaxFramesInFlight;
+    allocInfo.pSetLayouts = layouts.data();
+    if (vkAllocateDescriptorSets(ctx_->device(), &allocInfo, outSets.data()) !=
         VK_SUCCESS)
         throw std::runtime_error("RenderPass: vkAllocateDescriptorSets failed");
 }
@@ -92,101 +93,103 @@ void RenderPass::allocateDescriptorSets(
 void RenderPass::createDefaultTexture(VulkanContext& ctx,
                                        UniqueImage& outImage,
                                        UniqueSampler& outSampler) {
-    constexpr uint32_t W = 256, H = 256, CS = 32;
-    std::vector<uint8_t> px(W * H * 4);
-    for (uint32_t y = 0; y < H; ++y)
-        for (uint32_t x = 0; x < W; ++x) {
-            bool w = ((x / CS) + (y / CS)) % 2 == 0;
-            uint8_t c = w ? 220 : 60;
-            size_t i = (y * W + x) * 4;
-            px[i] = c;
-            px[i + 1] = c;
-            px[i + 2] = c;
-            px[i + 3] = 255;
+    constexpr uint32_t kWidth = 256, kHeight = 256, kCheckerSize = 32;
+    std::vector<uint8_t> pixels(kWidth * kHeight * 4);
+    for (uint32_t y = 0; y < kHeight; ++y)
+        for (uint32_t x = 0; x < kWidth; ++x) {
+            bool white = ((x / kCheckerSize) + (y / kCheckerSize)) % 2 == 0;
+            uint8_t value = white ? 220 : 60;
+            size_t idx = (y * kWidth + x) * 4;
+            pixels[idx + 0] = value;
+            pixels[idx + 1] = value;
+            pixels[idx + 2] = value;
+            pixels[idx + 3] = 255;
         }
 
-    VkDeviceSize sz = W * H * 4;
-    VkBuffer sb;
-    VkDeviceMemory sm;
-    ctx.createBuffer(sz, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+    VkDeviceSize imageByteSize = kWidth * kHeight * 4;
+
+    VkBuffer stagingBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory stagingMemory = VK_NULL_HANDLE;
+    ctx.createBuffer(imageByteSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
                          VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                     sb, sm);
-    void* d;
-    vkMapMemory(ctx.device(), sm, 0, sz, 0, &d);
-    std::memcpy(d, px.data(), sz);
-    vkUnmapMemory(ctx.device(), sm);
+                     stagingBuffer, stagingMemory);
+    void* mappedData = nullptr;
+    vkMapMemory(ctx.device(), stagingMemory, 0, imageByteSize, 0, &mappedData);
+    std::memcpy(mappedData, pixels.data(), static_cast<std::size_t>(imageByteSize));
+    vkUnmapMemory(ctx.device(), stagingMemory);
 
-    VkImage rawImage;
-    VkImageCreateInfo ii{};
-    ii.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    ii.imageType = VK_IMAGE_TYPE_2D;
-    ii.extent = {W, H, 1};
-    ii.mipLevels = 1;
-    ii.arrayLayers = 1;
-    ii.format = VK_FORMAT_R8G8B8A8_SRGB;
-    ii.tiling = VK_IMAGE_TILING_OPTIMAL;
-    ii.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    ii.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-    ii.samples = VK_SAMPLE_COUNT_1_BIT;
-    ii.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    vkCreateImage(ctx.device(), &ii, nullptr, &rawImage);
+    VkImage rawImage = VK_NULL_HANDLE;
+    VkImageCreateInfo imageInfo{};
+    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.imageType = VK_IMAGE_TYPE_2D;
+    imageInfo.extent = {kWidth, kHeight, 1};
+    imageInfo.mipLevels = 1;
+    imageInfo.arrayLayers = 1;
+    imageInfo.format = VK_FORMAT_R8G8B8A8_SRGB;
+    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    imageInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    vkCreateImage(ctx.device(), &imageInfo, nullptr, &rawImage);
 
-    VkMemoryRequirements mr;
-    vkGetImageMemoryRequirements(ctx.device(), rawImage, &mr);
-    VkMemoryAllocateInfo ai{};
-    ai.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    ai.allocationSize = mr.size;
-    ai.memoryTypeIndex =
-        ctx.findMemoryType(mr.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    VkDeviceMemory rawMem;
-    vkAllocateMemory(ctx.device(), &ai, nullptr, &rawMem);
-    vkBindImageMemory(ctx.device(), rawImage, rawMem, 0);
+    VkMemoryRequirements memReqs{};
+    vkGetImageMemoryRequirements(ctx.device(), rawImage, &memReqs);
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memReqs.size;
+    allocInfo.memoryTypeIndex =
+        ctx.findMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    VkDeviceMemory rawMemory = VK_NULL_HANDLE;
+    vkAllocateMemory(ctx.device(), &allocInfo, nullptr, &rawMemory);
+    vkBindImageMemory(ctx.device(), rawImage, rawMemory, 0);
 
     ctx.executeOneShot([&](VkCommandBuffer cmd) {
-        VkImageMemoryBarrier bar{};
-        bar.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        bar.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        bar.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        bar.image = rawImage;
-        bar.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-        bar.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        bar.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        bar.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        VkImageMemoryBarrier barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.image = rawImage;
+        barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
         vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
                              VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0,
-                             nullptr, 0, nullptr, 1, &bar);
-        VkBufferImageCopy cp{};
-        cp.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-        cp.imageExtent = {W, H, 1};
-        vkCmdCopyBufferToImage(cmd, sb, rawImage,
-                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &cp);
-        bar.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        bar.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        bar.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        bar.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+                             nullptr, 0, nullptr, 1, &barrier);
+
+        VkBufferImageCopy copyRegion{};
+        copyRegion.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+        copyRegion.imageExtent = {kWidth, kHeight, 1};
+        vkCmdCopyBufferToImage(cmd, stagingBuffer, rawImage,
+                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copyRegion);
+
+        barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
         vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
                              VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0,
-                             nullptr, 0, nullptr, 1, &bar);
+                             nullptr, 0, nullptr, 1, &barrier);
     });
 
-    vkDestroyBuffer(ctx.device(), sb, nullptr);
-    vkFreeMemory(ctx.device(), sm, nullptr);
+    vkDestroyBuffer(ctx.device(), stagingBuffer, nullptr);
+    vkFreeMemory(ctx.device(), stagingMemory, nullptr);
 
-    VkImageView rawView =
-        ctx.createImageView(rawImage, VK_FORMAT_R8G8B8A8_SRGB,
-                             VK_IMAGE_ASPECT_COLOR_BIT);
-    VkSampler rawSampler;
-    VkSamplerCreateInfo sc{};
-    sc.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-    sc.magFilter = VK_FILTER_LINEAR;
-    sc.minFilter = VK_FILTER_LINEAR;
-    sc.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    sc.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    sc.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    vkCreateSampler(ctx.device(), &sc, nullptr, &rawSampler);
+    VkImageView rawView = ctx.createImageView(rawImage, VK_FORMAT_R8G8B8A8_SRGB,
+                                                VK_IMAGE_ASPECT_COLOR_BIT);
+    VkSampler rawSampler = VK_NULL_HANDLE;
+    VkSamplerCreateInfo samplerInfo{};
+    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    samplerInfo.magFilter = VK_FILTER_LINEAR;
+    samplerInfo.minFilter = VK_FILTER_LINEAR;
+    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    vkCreateSampler(ctx.device(), &samplerInfo, nullptr, &rawSampler);
 
-    outImage = UniqueImage(ctx.device(), rawImage, rawMem, rawView);
+    outImage = UniqueImage(ctx.device(), rawImage, rawMemory, rawView);
     outSampler = UniqueSampler(rawSampler, DeleterSampler, ctx.device());
 }
 

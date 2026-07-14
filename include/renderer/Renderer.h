@@ -22,7 +22,7 @@ namespace vr {
 class Renderer {
   public:
     Scene& scene() { return scene_; }
-    void importModel(const std::string& path) { scene_.importModel(ctx_, path); }
+    void importModel(std::string_view path) { scene_.importModel(ctx_, path); }
 
     bool initialize(unsigned int width, unsigned int height);
     void mainLoop();
