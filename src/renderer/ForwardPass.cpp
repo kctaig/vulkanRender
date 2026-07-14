@@ -82,6 +82,32 @@ void ForwardPass::record(VkCommandBuffer cmd, std::uint32_t frameIndex,
     VkRect2D scissor{{0, 0}, ctx_->swapchainExtent()};
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
+    // Bind first available texture from scene assets, fallback to default
+    if (scene_ != nullptr && scene_->assets.textureCount() > 0) {
+        static bool once = false;
+        if (!once) {
+            once = true;
+            const auto& tex = scene_->assets.texture(0);
+            std::cout << "[ForwardPass] Binding scene texture: view=" << tex.view
+                      << " sampler=" << tex.sampler
+                      << " (" << tex.width << "x" << tex.height << ")" << std::endl;
+        }
+        const auto& tex = scene_->assets.texture(0);
+        VkDescriptorImageInfo imgInfo{};
+        imgInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        imgInfo.imageView = tex.view;
+        imgInfo.sampler = tex.sampler;
+
+        VkWriteDescriptorSet write{};
+        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write.dstSet = descriptorSets_[frameIndex];
+        write.dstBinding = 1;
+        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        write.descriptorCount = 1;
+        write.pImageInfo = &imgInfo;
+        vkUpdateDescriptorSets(ctx_->device(), 1, &write, 0, nullptr);
+    }
+
     if (scene_ != nullptr) {
         for (const auto& inst : scene_->instances) {
             const auto& mesh = scene_->assets.mesh(inst.modelId);

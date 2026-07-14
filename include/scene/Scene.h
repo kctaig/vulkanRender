@@ -1,6 +1,8 @@
 #pragma once
 
+#include <cmath>
 #include <cstdint>
+#include <iostream>
 #include <limits>
 #include <glm/glm.hpp>
 #include <string>
@@ -53,12 +55,28 @@ class Scene {
             bbMax = glm::max(bbMax, mesh.boundsMax);
         }
         glm::vec3 center = (bbMin + bbMax) * 0.5f;
-        float radius = glm::length(bbMax - bbMin) * 0.5f;
-        if (radius < 0.01f) radius = 1.0f;
+        glm::vec3 halfExt = (bbMax - bbMin) * 0.5f;
+        if (halfExt.x < 0.01f && halfExt.y < 0.01f && halfExt.z < 0.01f)
+            halfExt = glm::vec3(1.0f);
+
+        float fovY = glm::radians(45.0f);
+        float aspect = 16.0f / 9.0f;
+        float fovX = 2.0f * std::atan(std::tan(fovY * 0.5f) * aspect);
+
+        float distY = halfExt.y / std::tan(fovY * 0.5f);
+        float distX = halfExt.x / std::tan(fovX * 0.5f);
+        float distZ = halfExt.z / std::tan(fovX * 0.5f);
+        float distance = std::max({distX, distY, distZ}) * 1.1f;
+
+        std::cout << "[Scene] Bounds: (" << bbMin.x << "," << bbMin.y << ","
+                  << bbMin.z << ") -> (" << bbMax.x << "," << bbMax.y << ","
+                  << bbMax.z << ")" << std::endl;
+        std::cout << "[Scene] Center=(" << center.x << "," << center.y << ","
+                  << center.z << ") distance=" << distance << std::endl;
 
         camera.setTarget(center);
-        camera.setDistance(radius * 2.5f);
-        camera.setMaxDistance(radius * 20.0f);
+        camera.setDistance(distance);
+        camera.setMaxDistance(distance * 10.0f);
 
         for (std::size_t i = 0; i < m.meshIds.size(); ++i) {
             instances.push_back({m.meshIds[i], glm::mat4(1.0f)});

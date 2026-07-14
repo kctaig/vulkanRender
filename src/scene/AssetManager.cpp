@@ -155,6 +155,7 @@ ImportedModel AssetManager::importModel(VulkanContext& ctx,
         importer.ReadFile(filePath,
                           aiProcess_Triangulate | aiProcess_GenNormals |
                               aiProcess_JoinIdenticalVertices |
+                              aiProcess_PreTransformVertices |
                               aiProcess_FlipUVs);
     if (scene == nullptr || (scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE) !=
                                 0u) {
@@ -186,22 +187,37 @@ ImportedModel AssetManager::importModel(VulkanContext& ctx,
         aiMat->Get(AI_MATKEY_ROUGHNESS_FACTOR, roughness);
         mat.roughness = roughness;
 
-        // Load albedo texture
-        aiString texPath;
-        if (aiMat->GetTexture(aiTextureType_DIFFUSE, 0, &texPath) ==
-            AI_SUCCESS) {
-            auto fullTexPath =
-                (baseDir / std::filesystem::path(texPath.C_Str())).string();
-            mat.albedoTexture = loadTexture(ctx, fullTexPath);
+        // Helper: try multiple paths for a texture
+        auto tryLoadTexture = [&](aiTextureType type) -> std::uint32_t {
+            aiString texPath;
+            if (aiMat->GetTexture(type, 0, &texPath) != AI_SUCCESS)
+                return UINT32_MAX;
+
+            std::filesystem::path relPath(texPath.C_Str());
+            std::string filename = relPath.filename().string();
+
+            // Try: model dir + relative path
+            auto fullPath = (baseDir / relPath).string();
+            auto id = loadTexture(ctx, fullPath);
+            if (id != UINT32_MAX) return id;
+
+            // Try: model dir + filename only
+            fullPath = (baseDir / filename).string();
+            id = loadTexture(ctx, fullPath);
+            if (id != UINT32_MAX) return id;
+
+            // Try: relative path from cwd
+            id = loadTexture(ctx, relPath.string());
+            return id;
+        };
+
+        mat.albedoTexture = tryLoadTexture(aiTextureType_DIFFUSE);
+        if (mat.albedoTexture == UINT32_MAX) {
+            std::cout << "[AssetManager] No diffuse texture found for material '"
+                      << mat.name << "'" << std::endl;
         }
 
-        // Load normal map
-        if (aiMat->GetTexture(aiTextureType_NORMALS, 0, &texPath) ==
-            AI_SUCCESS) {
-            auto fullTexPath =
-                (baseDir / std::filesystem::path(texPath.C_Str())).string();
-            mat.normalTexture = loadTexture(ctx, fullTexPath);
-        }
+        mat.normalTexture = tryLoadTexture(aiTextureType_NORMALS);
 
         sceneMaterialIds[i] = addMaterial(mat);
     }
@@ -335,8 +351,6 @@ std::uint32_t AssetManager::loadTexture(VulkanContext& ctx,
     int w = 0, h = 0, ch = 0;
     stbi_uc* pixels = stbi_load(path.c_str(), &w, &h, &ch, 4);
     if (pixels == nullptr) {
-        std::cerr << "[AssetManager] Failed to load texture: " << path
-                  << "\n";
         return UINT32_MAX;
     }
 
