@@ -7,7 +7,6 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(VR_ENABLE_VALIDATION "Enable Vulkan validation layers" ON)
 
-include(cmake/CompilerWarnings.cmake)
 include(FetchContent)
 
 find_package(Vulkan REQUIRED)
@@ -20,29 +19,6 @@ endif()
 if(NOT Vulkan_GLSLC_EXECUTABLE)
     message(FATAL_ERROR "glslc not found. Install Vulkan SDK with glslc.")
 endif()
-
-FetchContent_Declare(
-    imgui
-    GIT_REPOSITORY https://github.com/ocornut/imgui.git
-    GIT_TAG docking
-)
-FetchContent_MakeAvailable(imgui)
-
-add_library(imgui STATIC
-    ${imgui_SOURCE_DIR}/imgui.cpp
-    ${imgui_SOURCE_DIR}/imgui_draw.cpp
-    ${imgui_SOURCE_DIR}/imgui_tables.cpp
-    ${imgui_SOURCE_DIR}/imgui_widgets.cpp
-    ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
-    ${imgui_SOURCE_DIR}/backends/imgui_impl_win32.cpp
-)
-
-target_include_directories(imgui PUBLIC
-    ${imgui_SOURCE_DIR}
-    ${imgui_SOURCE_DIR}/backends
-)
-
-target_link_libraries(imgui PUBLIC Vulkan::Vulkan)
 
 if(NOT TARGET glm::glm)
     message(STATUS "glm::glm target not found, fetching GLM from GitHub...")
@@ -59,6 +35,8 @@ set(VR_SOURCES
     src/core/Application.cpp
     src/scene/MeshIO.cpp
     src/renderer/Renderer.cpp
+    src/core/VulkanContext.cpp
+    src/renderer/ForwardPass.cpp
 )
 
 add_executable(vulkan_renderer ${VR_SOURCES})
@@ -71,8 +49,6 @@ file(MAKE_DIRECTORY ${VR_SHADER_BINARY_DIR})
 set(VR_SHADER_SOURCES
     ${VR_SHADER_SOURCE_DIR}/triangle.vert
     ${VR_SHADER_SOURCE_DIR}/triangle.frag
-    ${VR_SHADER_SOURCE_DIR}/deferred_lighting.vert
-    ${VR_SHADER_SOURCE_DIR}/deferred_lighting.frag
 )
 
 set(VR_SHADER_OUTPUTS)
@@ -94,8 +70,8 @@ endforeach()
 add_custom_target(vulkan_shaders ALL DEPENDS ${VR_SHADER_OUTPUTS})
 add_dependencies(vulkan_renderer vulkan_shaders)
 
-target_include_directories(vulkan_renderer PRIVATE src)
-target_link_libraries(vulkan_renderer PRIVATE Vulkan::Vulkan glm::glm imgui user32 gdi32 shell32)
+target_include_directories(vulkan_renderer PRIVATE include src)
+target_link_libraries(vulkan_renderer PRIVATE Vulkan::Vulkan glm::glm user32 gdi32 shell32)
 
 target_compile_definitions(vulkan_renderer PRIVATE
     $<$<AND:$<BOOL:${VR_ENABLE_VALIDATION}>,$<CONFIG:Debug>>:VR_ENABLE_VALIDATION=1>
@@ -103,6 +79,5 @@ target_compile_definitions(vulkan_renderer PRIVATE
     VR_ASSET_DIR="${CMAKE_CURRENT_SOURCE_DIR}/assets"
 )
 
-set_project_warnings(vulkan_renderer)
 
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR}/src FILES ${VR_SOURCES})
