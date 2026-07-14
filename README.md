@@ -29,7 +29,7 @@
 ├── shaders/                    # GLSL 着色器
 │   ├── triangle.vert
 │   └── triangle.frag
-├── assets/
+├── resource/
 │   └── models/                 # OBJ 模型文件
 ├── docs/
 │   └── ARCHITECTURE_ROADMAP.md # 架构演进路线
@@ -95,7 +95,7 @@ cmake --build build_vs --config Debug
 ./build/Debug/vulkan_renderer.exe
 
 # 加载 OBJ 模型
-./build/Debug/vulkan_renderer.exe assets/models/bunny.obj
+./build/Debug/vulkan_renderer.exe resource/models/bunny.obj
 ```
 
 鼠标操作：

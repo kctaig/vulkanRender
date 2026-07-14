@@ -38,6 +38,9 @@ bool Renderer::initialize(unsigned int width, unsigned int height) {
 
     // --- Passes ---
     auto fp = std::make_unique<ForwardPass>();
+    if (!pendingMeshPath_.empty()) {
+        fp->setMeshInputPath(std::move(pendingMeshPath_));
+    }
     if (!fp->initialize(ctx_)) {
         std::cerr << "[Renderer] ForwardPass initialization failed\n";
         return false;
@@ -94,13 +97,7 @@ bool Renderer::initialize(unsigned int width, unsigned int height) {
 }
 
 void Renderer::setMeshInputPath(std::string path) {
-    for (auto& pass : passes_) {
-        auto* fp = dynamic_cast<ForwardPass*>(pass.get());
-        if (fp != nullptr) {
-            fp->setMeshInputPath(std::move(path));
-            return;
-        }
-    }
+    pendingMeshPath_ = std::move(path);
 }
 
 void Renderer::mainLoop() {

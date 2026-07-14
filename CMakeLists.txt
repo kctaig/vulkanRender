@@ -88,7 +88,7 @@ target_link_libraries(vulkan_renderer PRIVATE Vulkan::Vulkan glm::glm user32 gdi
 target_compile_definitions(vulkan_renderer PRIVATE
     $<$<AND:$<BOOL:${VR_ENABLE_VALIDATION}>,$<CONFIG:Debug>>:VR_ENABLE_VALIDATION=1>
     VR_SHADER_DIR="${VR_SHADER_BINARY_DIR}"
-    VR_ASSET_DIR="${CMAKE_CURRENT_SOURCE_DIR}/assets"
+    VR_ASSET_DIR="${CMAKE_CURRENT_SOURCE_DIR}/resource"
 )
 
 

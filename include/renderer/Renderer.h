@@ -57,6 +57,8 @@ class Renderer {
     unsigned int windowHeight_ = 900;
     bool framebufferResized_ = false;
 
+    std::string pendingMeshPath_;
+
     bool ready_ = false;
 };
 

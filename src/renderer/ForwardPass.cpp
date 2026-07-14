@@ -610,6 +610,8 @@ void ForwardPass::loadMeshVertices() {
                                ? std::string(VR_ASSET_DIR) + "/models/basic_mesh.obj"
                                : meshInputPath_;
 
+    std::cout << "[ForwardPass] Loading mesh: " << filePath << std::endl;
+
     MeshInputData meshData;
     if (loadObjMesh(filePath, meshData)) {
         meshVertices_.reserve(meshData.vertices.size());
@@ -617,6 +619,10 @@ void ForwardPass::loadMeshVertices() {
             meshVertices_.push_back(Vertex{v.position, v.normal, v.uv});
         }
         meshIndices_ = meshData.indices;
+        std::cout << "[ForwardPass] Loaded " << meshVertices_.size() << " vertices, "
+                  << meshIndices_.size() << " indices" << std::endl;
+    } else {
+        std::cout << "[ForwardPass] OBJ load failed, using fallback" << std::endl;
     }
 
     if (meshVertices_.empty() || meshIndices_.empty()) {
