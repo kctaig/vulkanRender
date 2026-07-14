@@ -2,7 +2,6 @@
 
 #include <array>
 #include <cstdint>
-#include <string>
 #include <vector>
 
 #define NOMINMAX
@@ -26,7 +25,8 @@ class ForwardPass : public RenderPass {
         glm::vec2 uv;
 
         static VkVertexInputBindingDescription getBindingDescription();
-        static std::array<VkVertexInputAttributeDescription, 3> getAttributeDescriptions();
+        static std::array<VkVertexInputAttributeDescription, 3>
+        getAttributeDescriptions();
     };
 
     struct UniformBufferObject {
@@ -37,20 +37,13 @@ class ForwardPass : public RenderPass {
 
     // --- RenderPass interface ---
     bool initialize(VulkanContext& ctx) override;
-    void record(VkCommandBuffer cmd, std::uint32_t frameIndex, std::uint32_t imageIndex) override;
+    void record(VkCommandBuffer cmd, std::uint32_t frameIndex,
+                std::uint32_t imageIndex) override;
     void onSwapchainResize(VulkanContext& ctx) override;
     void shutdown() override;
 
     // --- Scene ---
-    void setScene(Scene& scene);
-
-    // --- Mesh loading ---
-    void setMeshInputPath(std::string path);
-
-    // --- Model transform ---
-    void addModelYaw(float delta);
-    void addModelPitch(float delta);
-    void addModelTranslation(float dx, float dy);
+    void setScene(Scene& scene) { scene_ = &scene; }
 
   private:
     void createRenderPass(VulkanContext& ctx);
@@ -58,14 +51,12 @@ class ForwardPass : public RenderPass {
     void createGraphicsPipeline(VulkanContext& ctx);
     void createDepthResources(VulkanContext& ctx);
     void createFramebuffers(VulkanContext& ctx);
-    void createVertexBuffer(VulkanContext& ctx);
-    void createIndexBuffer(VulkanContext& ctx);
+    void createDefaultTexture(VulkanContext& ctx);
     void createUniformBuffers(VulkanContext& ctx);
     void createDescriptorPool(VulkanContext& ctx);
     void createDescriptorSets(VulkanContext& ctx);
-    void updateUniformBuffer(VulkanContext& ctx, std::uint32_t frameIndex);
-    void loadMeshVertices();
-    void refreshSceneScaleParams();
+    void updateUniformBuffer(VulkanContext& ctx, std::uint32_t frameIndex,
+                             const glm::mat4& model);
 
     Scene* scene_ = nullptr;
 
@@ -76,26 +67,16 @@ class ForwardPass : public RenderPass {
     VkImage depthImage_ = VK_NULL_HANDLE;
     VkDeviceMemory depthImageMemory_ = VK_NULL_HANDLE;
     VkImageView depthImageView_ = VK_NULL_HANDLE;
-    VkFormat depthFormat_ = VK_FORMAT_UNDEFINED;
-
-    VkBuffer vertexBuffer_ = VK_NULL_HANDLE;
-    VkDeviceMemory vertexBufferMemory_ = VK_NULL_HANDLE;
-    VkBuffer indexBuffer_ = VK_NULL_HANDLE;
-    VkDeviceMemory indexBufferMemory_ = VK_NULL_HANDLE;
-    std::vector<Vertex> meshVertices_;
-    std::vector<std::uint32_t> meshIndices_;
 
     std::array<VkBuffer, kMaxFramesInFlight> uniformBuffers_{};
     std::array<VkDeviceMemory, kMaxFramesInFlight> uniformBuffersMemory_{};
     VkDescriptorPool descriptorPool_ = VK_NULL_HANDLE;
     std::array<VkDescriptorSet, kMaxFramesInFlight> descriptorSets_{};
 
-    std::string meshInputPath_;
-    float sceneRadius_ = 1.0f;
-
-    glm::vec3 modelTranslation_ = glm::vec3(0.0f);
-    float modelYawRadians_ = 0.0f;
-    float modelPitchRadians_ = 0.0f;
+    VkImage textureImage_ = VK_NULL_HANDLE;
+    VkDeviceMemory textureImageMemory_ = VK_NULL_HANDLE;
+    VkImageView textureImageView_ = VK_NULL_HANDLE;
+    VkSampler textureSampler_ = VK_NULL_HANDLE;
 };
 
 }  // namespace vr

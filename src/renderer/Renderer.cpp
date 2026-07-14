@@ -38,9 +38,6 @@ bool Renderer::initialize(unsigned int width, unsigned int height) {
 
     // --- Passes ---
     auto fp = std::make_unique<ForwardPass>();
-    if (!pendingMeshPath_.empty()) {
-        fp->setMeshInputPath(std::move(pendingMeshPath_));
-    }
     if (!fp->initialize(ctx_)) {
         std::cerr << "[Renderer] ForwardPass initialization failed\n";
         return false;
@@ -96,10 +93,6 @@ bool Renderer::initialize(unsigned int width, unsigned int height) {
     return true;
 }
 
-void Renderer::setMeshInputPath(std::string path) {
-    pendingMeshPath_ = std::move(path);
-}
-
 void Renderer::mainLoop() {
     if (!ready_)
         return;
@@ -116,6 +109,7 @@ void Renderer::mainLoop() {
 }
 
 void Renderer::shutdown() {
+    std::cout << "[Renderer] Shutdown begin" << std::endl;
     if (ctx_.device() != VK_NULL_HANDLE) {
         vkDeviceWaitIdle(ctx_.device());
     }
@@ -139,6 +133,9 @@ void Renderer::shutdown() {
         if (fence != VK_NULL_HANDLE)
             vkDestroyFence(ctx_.device(), fence, nullptr);
     }
+
+    // Destroy scene assets (meshes, textures) before device
+    scene_.shutdown(ctx_.device());
 
     // VulkanContext cleans up commandPool, device, surface, instance
     ctx_.shutdown();

@@ -99,6 +99,7 @@ class VulkanContext {
 
     // --- Static utilities ---
     static std::vector<char> readBinaryFile(const char* filePath);
+    static bool hasStencilComponent(VkFormat format);
 
   private:
     void createInstance();

@@ -11,6 +11,14 @@ option(VR_ENABLE_VALIDATION "Enable Vulkan validation layers" ON)
 
 find_package(Vulkan REQUIRED)
 
+# --- assimp (build from source in 3dparty) ---
+set(ASSIMP_BUILD_ASSIMP_TOOLS OFF CACHE BOOL "" FORCE)
+set(ASSIMP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(ASSIMP_BUILD_SAMPLES OFF CACHE BOOL "" FORCE)
+set(ASSIMP_INSTALL OFF CACHE BOOL "" FORCE)
+set(ASSIMP_INJECT_DEBUG_POSTFIX OFF CACHE BOOL "" FORCE)
+add_subdirectory(3dparty/assimp EXCLUDE_FROM_ALL)
+
 # --- glslc ---
 if(NOT Vulkan_GLSLC_EXECUTABLE)
     find_program(Vulkan_GLSLC_EXECUTABLE NAMES glslc HINTS ${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE})
@@ -22,9 +30,9 @@ endif()
 # --- GLM (header-only, vendored in 3dparty) ---
 if(NOT TARGET glm::glm)
     set(GLM_DIR ${CMAKE_SOURCE_DIR}/3dparty/glm)
-    if(EXISTS ${GLM_DIR}/glm/glm.hpp)
+    if(EXISTS ${GLM_DIR}/glm.hpp)
         add_library(glm::glm INTERFACE IMPORTED)
-        target_include_directories(glm::glm INTERFACE ${GLM_DIR})
+        target_include_directories(glm::glm INTERFACE ${GLM_DIR}/..)
         message(STATUS "GLM: using vendored copy at ${GLM_DIR}")
     else()
         message(FATAL_ERROR "GLM not found at ${GLM_DIR}")
@@ -34,7 +42,7 @@ endif()
 set(VR_SOURCES
     src/main.cpp
     src/core/Application.cpp
-    src/scene/MeshIO.cpp
+    src/scene/AssetManager.cpp
     src/renderer/Renderer.cpp
     src/core/VulkanContext.cpp
     src/renderer/ForwardPass.cpp
@@ -46,12 +54,23 @@ set(VR_HEADERS
     include/renderer/RenderPass.h
     include/renderer/Renderer.h
     include/renderer/ForwardPass.h
+    include/scene/AssetManager.h
     include/scene/Camera.h
     include/scene/Scene.h
-    include/scene/MeshIO.h
 )
 
 add_executable(vulkan_renderer ${VR_SOURCES} ${VR_HEADERS})
+
+if(TARGET assimp)
+    target_compile_definitions(vulkan_renderer PRIVATE VR_HAS_ASSIMP)
+    message(STATUS "Assimp: building from 3dparty/assimp")
+    add_custom_command(TARGET vulkan_renderer POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:assimp>
+            $<TARGET_FILE_DIR:vulkan_renderer>
+        COMMENT "Copying assimp DLL to output directory"
+    )
+endif()
 
 set(VR_SHADER_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/shaders)
 set(VR_SHADER_BINARY_DIR ${CMAKE_BINARY_DIR}/shaders)
@@ -82,8 +101,9 @@ endforeach()
 add_custom_target(vulkan_shaders ALL DEPENDS ${VR_SHADER_OUTPUTS})
 add_dependencies(vulkan_renderer vulkan_shaders)
 
-target_include_directories(vulkan_renderer PRIVATE include src)
-target_link_libraries(vulkan_renderer PRIVATE Vulkan::Vulkan glm::glm user32 gdi32 shell32)
+target_include_directories(vulkan_renderer PRIVATE include src 3dparty/stb_image)
+target_link_libraries(vulkan_renderer PRIVATE Vulkan::Vulkan glm::glm user32 gdi32 shell32
+    $<$<TARGET_EXISTS:assimp>:assimp>)
 
 target_compile_definitions(vulkan_renderer PRIVATE
     $<$<AND:$<BOOL:${VR_ENABLE_VALIDATION}>,$<CONFIG:Debug>>:VR_ENABLE_VALIDATION=1>
