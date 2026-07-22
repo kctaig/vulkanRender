@@ -30,6 +30,7 @@ class PipelineBuilder {
     // --- Shaders ---
     PipelineBuilder& vertexShader(const std::string& spvPath);
     PipelineBuilder& fragmentShader(const std::string& spvPath);
+    PipelineBuilder& computeShader(const std::string& spvPath);
 
     // --- Vertex input (template) ---
     template <typename VertexType>
@@ -53,6 +54,7 @@ class PipelineBuilder {
     // --- Color ---
     PipelineBuilder& colorAttachment(VkFormat format,
                                       bool blend = false);
+    PipelineBuilder& colorAttachments(const std::vector<VkFormat>& formats);  // MRT
 
     // --- Dynamic state ---
     PipelineBuilder& dynamicState(VkDynamicState state);
@@ -66,6 +68,7 @@ class PipelineBuilder {
     // --- Build ---
     [[nodiscard]] VkPipeline build(VkRenderPass renderPass,
                                     std::uint32_t subpass = 0) const;
+    [[nodiscard]] VkPipeline buildCompute() const;
     [[nodiscard]] VkPipelineLayout pipelineLayout() const {
         return pipelineLayout_;
     }
@@ -79,6 +82,7 @@ class PipelineBuilder {
     // Shaders
     std::string vertSpvPath_;
     std::string fragSpvPath_;
+    std::string compSpvPath_;
 
     // Vertex
     VkVertexInputBindingDescription bindingDesc_{};
@@ -95,7 +99,7 @@ class PipelineBuilder {
     VkFrontFace frontFace_ = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 
     // Color
-    VkFormat colorFormat_ = VK_FORMAT_UNDEFINED;
+    std::vector<VkFormat> colorFormats_;
     bool blend_ = false;
 
     // Dynamic
@@ -111,6 +115,7 @@ class PipelineBuilder {
     mutable VkPipelineLayout pipelineLayout_ = VK_NULL_HANDLE;
     mutable VkShaderModule vertModule_ = VK_NULL_HANDLE;
     mutable VkShaderModule fragModule_ = VK_NULL_HANDLE;
+    mutable VkShaderModule compModule_ = VK_NULL_HANDLE;
 };
 
 }  // namespace vr

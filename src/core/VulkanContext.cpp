@@ -14,8 +14,15 @@ namespace vr {
 
 namespace {
 
-constexpr std::array<const char*, 1> kDeviceExtensions = {
+constexpr std::array<const char*, 1> kBaseDeviceExtensions = {
     VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+};
+
+constexpr std::array<const char*, 4> kRTDeviceExtensions = {
+    VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
+    VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
+    VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
+    VK_KHR_RAY_QUERY_EXTENSION_NAME,
 };
 
 constexpr std::array<const char*, 2> kInstanceExtensions = {
@@ -683,13 +690,78 @@ void VulkanContext::createLogicalDevice() {
 
     VkPhysicalDeviceFeatures deviceFeatures{};
 
+    // --- Ray tracing feature chain ---
+    VkPhysicalDeviceAccelerationStructureFeaturesKHR asFeatures{};
+    asFeatures.sType =
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
+    VkPhysicalDeviceRayTracingPipelineFeaturesKHR rtPipelineFeatures{};
+    rtPipelineFeatures.sType =
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
+    VkPhysicalDeviceRayQueryFeaturesKHR rayQueryFeatures{};
+    rayQueryFeatures.sType =
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR;
+    VkPhysicalDeviceBufferDeviceAddressFeaturesKHR bufferDeviceAddressFeatures{};
+    bufferDeviceAddressFeatures.sType =
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES_KHR;
+
+    // Query supported RT features
+    VkPhysicalDeviceFeatures2 features2{};
+    features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+    features2.pNext = &asFeatures;
+    vkGetPhysicalDeviceFeatures2(physicalDevice_, &features2);
+
+    // Chain: features2 → asFeatures → rtPipelineFeatures → rayQueryFeatures → bufferDeviceAddress
+    asFeatures.pNext = &rtPipelineFeatures;
+    rtPipelineFeatures.pNext = &rayQueryFeatures;
+    rayQueryFeatures.pNext = &bufferDeviceAddressFeatures;
+
+    // Check if RT extensions are available on this device
+    std::uint32_t extCount = 0;
+    vkEnumerateDeviceExtensionProperties(physicalDevice_, nullptr, &extCount, nullptr);
+    std::vector<VkExtensionProperties> availExts(extCount);
+    vkEnumerateDeviceExtensionProperties(physicalDevice_, nullptr, &extCount, availExts.data());
+
+    bool allRTAvail = true;
+    for (const char* rtExt : kRTDeviceExtensions) {
+        bool found = false;
+        for (const auto& e : availExts) {
+            if (std::strcmp(e.extensionName, rtExt) == 0) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            allRTAvail = false;
+            break;
+        }
+    }
+
+    // Build extension list: base + RT (if available)
+    std::vector<const char*> enabledExtensions(kBaseDeviceExtensions.begin(),
+                                               kBaseDeviceExtensions.end());
+    if (allRTAvail && asFeatures.accelerationStructure &&
+        rtPipelineFeatures.rayTracingPipeline && rayQueryFeatures.rayQuery) {
+        for (const char* rtExt : kRTDeviceExtensions) {
+            enabledExtensions.push_back(rtExt);
+        }
+        rtAvailable_ = true;
+    } else {
+        rtAvailable_ = false;
+        // Clear the RT pNext chain
+        features2.pNext = nullptr;
+    }
+
     VkDeviceCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     createInfo.queueCreateInfoCount = static_cast<std::uint32_t>(queueCreateInfos.size());
     createInfo.pQueueCreateInfos = queueCreateInfos.data();
     createInfo.pEnabledFeatures = &deviceFeatures;
-    createInfo.enabledExtensionCount = static_cast<std::uint32_t>(kDeviceExtensions.size());
-    createInfo.ppEnabledExtensionNames = kDeviceExtensions.data();
+    createInfo.enabledExtensionCount = static_cast<std::uint32_t>(enabledExtensions.size());
+    createInfo.ppEnabledExtensionNames = enabledExtensions.data();
+
+    if (rtAvailable_) {
+        createInfo.pNext = &features2;  // chain RT features
+    }
 
     if (validationEnabled_ && areValidationLayersSupported()) {
         createInfo.enabledLayerCount = static_cast<std::uint32_t>(kValidationLayers.size());
@@ -702,6 +774,12 @@ void VulkanContext::createLogicalDevice() {
 
     vkGetDeviceQueue(device_, indices.graphicsFamily, 0, &graphicsQueue_);
     vkGetDeviceQueue(device_, indices.presentFamily, 0, &presentQueue_);
+
+    // Load RT function pointers + query properties
+    if (rtAvailable_) {
+        loadRTFunctionPointers();
+        queryRTProperties();
+    }
 }
 
 void VulkanContext::createSwapchain() {
@@ -802,7 +880,9 @@ bool VulkanContext::checkDeviceExtensionSupport(VkPhysicalDevice device) const {
         device, nullptr, &extensionCount, availableExtensions.data()
     );
 
-    std::set<std::string> requiredExtensions(kDeviceExtensions.begin(), kDeviceExtensions.end());
+    // Check base extensions (required)
+    std::set<std::string> requiredExtensions(kBaseDeviceExtensions.begin(),
+                                             kBaseDeviceExtensions.end());
     for (const auto& extension : availableExtensions) {
         requiredExtensions.erase(extension.extensionName);
     }
@@ -850,6 +930,124 @@ VkExtent2D VulkanContext::chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capab
     );
 
     return actualExtent;
+}
+
+// ---------------------------------------------------------------------------
+// Ray tracing helpers
+// ---------------------------------------------------------------------------
+
+void VulkanContext::loadRTFunctionPointers() {
+#define VR_LOAD_RT_FN(name)                                                    \
+    vk##name = reinterpret_cast<PFN_vk##name>(vkGetDeviceProcAddr(device_, "vk" #name)); \
+    if (!vk##name) std::cerr << "[VulkanContext] Failed to load vk" #name << "\n"
+
+    VR_LOAD_RT_FN(CreateAccelerationStructureKHR);
+    VR_LOAD_RT_FN(DestroyAccelerationStructureKHR);
+    VR_LOAD_RT_FN(GetAccelerationStructureBuildSizesKHR);
+    VR_LOAD_RT_FN(CmdBuildAccelerationStructuresKHR);
+    VR_LOAD_RT_FN(GetAccelerationStructureDeviceAddressKHR);
+    VR_LOAD_RT_FN(GetBufferDeviceAddressKHR);
+    VR_LOAD_RT_FN(CreateRayTracingPipelinesKHR);
+    VR_LOAD_RT_FN(GetRayTracingShaderGroupHandlesKHR);
+    VR_LOAD_RT_FN(CmdTraceRaysKHR);
+
+#undef VR_LOAD_RT_FN
+}
+
+void VulkanContext::queryRTProperties() {
+    rtProps_.pipelineProps.sType =
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR;
+    rtProps_.accelProps.sType =
+        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR;
+
+    VkPhysicalDeviceProperties2 props2{};
+    props2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+    props2.pNext = &rtProps_.pipelineProps;
+    rtProps_.pipelineProps.pNext = &rtProps_.accelProps;
+    vkGetPhysicalDeviceProperties2(physicalDevice_, &props2);
+
+    rtProps_.shaderGroupHandleSize  = rtProps_.pipelineProps.shaderGroupHandleSize;
+    rtProps_.shaderGroupBaseAlignment = rtProps_.pipelineProps.shaderGroupBaseAlignment;
+    rtProps_.maxRayDispatchInvocationCount =
+        rtProps_.pipelineProps.maxRayDispatchInvocationCount;
+}
+
+VkDeviceAddress VulkanContext::getBufferDeviceAddress(VkBuffer buffer) const {
+    if (!vkGetBufferDeviceAddressKHR) return 0;
+    VkBufferDeviceAddressInfoKHR info{};
+    info.sType  = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO_KHR;
+    info.buffer = buffer;
+    return vkGetBufferDeviceAddressKHR(device_, &info);
+}
+
+// --- Additional image creation helpers ---
+
+void VulkanContext::createImage3D(std::uint32_t width, std::uint32_t height,
+                                   std::uint32_t depth, VkFormat format,
+                                   VkImageTiling tiling, VkImageUsageFlags usage,
+                                   VkMemoryPropertyFlags properties, VkImage& image,
+                                   VkDeviceMemory& imageMemory) {
+    VkImageCreateInfo imageInfo{};
+    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.imageType = VK_IMAGE_TYPE_3D;
+    imageInfo.extent = {width, height, depth};
+    imageInfo.mipLevels = 1;
+    imageInfo.arrayLayers = 1;
+    imageInfo.format = format;
+    imageInfo.tiling = tiling;
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    imageInfo.usage = usage;
+    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    if (vkCreateImage(device_, &imageInfo, nullptr, &image) != VK_SUCCESS) {
+        throw std::runtime_error("vkCreateImage (3D) failed");
+    }
+
+    VkMemoryRequirements memReq;
+    vkGetImageMemoryRequirements(device_, image, &memReq);
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memReq.size;
+    allocInfo.memoryTypeIndex = findMemoryType(memReq.memoryTypeBits, properties);
+    if (vkAllocateMemory(device_, &allocInfo, nullptr, &imageMemory) != VK_SUCCESS) {
+        throw std::runtime_error("vkAllocateMemory (3D image) failed");
+    }
+    vkBindImageMemory(device_, image, imageMemory, 0);
+}
+
+void VulkanContext::createStorageImage(std::uint32_t width, std::uint32_t height,
+                                        VkFormat format, VkImageUsageFlags extraUsage,
+                                        VkImage& image, VkDeviceMemory& imageMemory) {
+    VkImageUsageFlags usage =
+        VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT |
+        VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | extraUsage;
+    createImage(width, height, format, VK_IMAGE_TILING_OPTIMAL, usage,
+                VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, image, imageMemory);
+}
+
+VkImageView VulkanContext::createImageViewLayer(VkImage image, VkFormat format,
+                                                  VkImageAspectFlags aspectFlags,
+                                                  std::uint32_t baseMipLevel,
+                                                  std::uint32_t levelCount,
+                                                  std::uint32_t baseArrayLayer,
+                                                  std::uint32_t layerCount) const {
+    VkImageViewCreateInfo viewInfo{};
+    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    viewInfo.image = image;
+    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.format = format;
+    viewInfo.subresourceRange.aspectMask = aspectFlags;
+    viewInfo.subresourceRange.baseMipLevel = baseMipLevel;
+    viewInfo.subresourceRange.levelCount = levelCount;
+    viewInfo.subresourceRange.baseArrayLayer = baseArrayLayer;
+    viewInfo.subresourceRange.layerCount = layerCount;
+
+    VkImageView imageView = VK_NULL_HANDLE;
+    if (vkCreateImageView(device_, &viewInfo, nullptr, &imageView) != VK_SUCCESS) {
+        throw std::runtime_error("vkCreateImageView (layered) failed");
+    }
+    return imageView;
 }
 
 }  // namespace vr

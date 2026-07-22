@@ -1,0 +1,76 @@
+#version 460
+#extension GL_EXT_ray_query : require
+
+#include "ddgiCommon.glsl"
+
+layout(local_size_x = 32) in;
+
+layout(set = 0, binding = 0) uniform accelerationStructureEXT tlas;
+layout(set = 1, binding = 0, rgba16f) uniform image2D irradianceAtlas;
+layout(set = 1, binding = 1, rg16f)  uniform image2D depthAtlas;
+layout(set = 1, binding = 2) uniform DDGIConfigUBO {
+    ivec4 probeCounts;       // xyz = count, w = total
+    vec4  gridOrigin;        // xyz = origin
+    float probeSpacing;
+    float hysteresis;
+    float depthSharpness;
+    float infDistance;
+    int   raysPerProbe;
+    int   irradianceRes;
+    int   depthRes;
+    int   pad;
+} config;
+
+layout(push_constant) uniform PC {
+    uint probeIndex;
+    uint frameIndex;
+} pc;
+
+void main() {
+    uint rayIdx = gl_LocalInvocationIndex;
+    uint raysPerProbe = uint(config.raysPerProbe);
+
+    if (rayIdx >= raysPerProbe) return;
+
+    vec3 probePos = getProbeWorldPos(pc.probeIndex, config.gridOrigin.xyz,
+                                      config.probeSpacing, config.probeCounts.xyz);
+
+    // Generate ray direction using Hammersley + cosine-weighted hemisphere
+    vec2 rnd = hammersley(rayIdx + pc.frameIndex * pc.probeIndex, raysPerProbe);
+    // Use an arbitrary world-up direction for the hemisphere
+    vec3 upDir = vec3(0.0, 1.0, 0.0);
+    if (abs(dot(upDir, upDir)) < 0.001) upDir = vec3(0.0, 0.0, 1.0);
+    vec3 dir = cosineSampleHemisphere(upDir, rnd);
+
+    // Compute octahedral UV for this direction
+    vec2 octUV = directionToOctahedralUV(dir);
+
+    // Ray query
+    rayQueryEXT q;
+    rayQueryInitializeEXT(q, tlas, gl_RayFlagsOpaqueEXT, 0xFF,
+                          probePos, 0.001, dir, config.infDistance);
+    while (rayQueryProceedEXT(q)) {}
+
+    vec4 irr = vec4(0.03);         // sky / environment color
+    vec2 dist = vec2(config.infDistance, config.infDistance * config.infDistance);
+
+    if (rayQueryGetIntersectionTypeEXT(q, true) != gl_RayQueryCommittedIntersectionNoneEXT) {
+        float t = rayQueryGetIntersectionTEXT(q, true);
+        dist = vec2(t, t * t);
+
+        // Get hit barycentrics and interpolate vertex attributes
+        vec2 bary = rayQueryGetIntersectionBarycentricsEXT(q, true);
+        // Use built-in triangle vertex positions (requires barycentrics extension)
+        // For simplicity, use a simple NdotL-based radiance
+        // TODO: read actual hit normal/material from vertex data
+        vec3 hitNormal = vec3(0.0, 1.0, 0.0);
+        float NdotL = max(dot(hitNormal, normalize(vec3(0.5, 0.8, 0.3))), 0.0);
+        irr.rgb = vec3(0.8) * NdotL;
+    }
+    irr.a = 1.0;
+
+    ivec2 texel = probeAtlasTexel(pc.probeIndex, octUV, config.probeCounts.xyz,
+                                   config.irradianceRes);
+    imageStore(irradianceAtlas, texel, irr);
+    imageStore(depthAtlas, texel, vec4(dist, 0, 0));
+}

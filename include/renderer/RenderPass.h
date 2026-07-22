@@ -14,6 +14,7 @@ namespace vr {
 
 class VulkanContext;
 class Scene;
+class ResourceTable;
 
 class RenderPass {
   public:
@@ -28,6 +29,7 @@ class RenderPass {
     virtual void shutdown() = 0;
 
     void setScene(Scene& s) { scene_ = &s; }
+    void setResources(ResourceTable& r) { resources_ = &r; }
 
   protected:
     // ================================================================
@@ -77,6 +79,7 @@ class RenderPass {
 
     VulkanContext* ctx_ = nullptr;
     Scene* scene_ = nullptr;
+    ResourceTable* resources_ = nullptr;
     VkRenderPass renderPass_ = VK_NULL_HANDLE;
     std::vector<VkFramebuffer> swapchainFramebuffers_;
 };

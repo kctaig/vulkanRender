@@ -9,6 +9,14 @@
 #include <stdexcept>
 
 #include "renderer/ForwardPass.h"
+#include "renderer/PreDepthPass.h"
+#include "renderer/GeometryPass.h"
+#include "renderer/DeferredLightingPass.h"
+#include "renderer/PostProcessPass.h"
+#include "renderer/ResourceTable.h"
+#include "renderer/AccelerationStructure.h"
+#include "renderer/DDGIVolume.h"
+#include "renderer/DDGIProbePass.h"
 
 namespace vr {
 
@@ -40,14 +48,101 @@ bool Renderer::initialize(unsigned int width, unsigned int height) {
 
     if (!ctx_.initialize(ctxInfo)) return false;
 
+    // --- Resource table (shared between passes) ---
+    resourceTable_ = std::make_unique<ResourceTable>();
+    {
+        VkSampler nearestSamp = VK_NULL_HANDLE;
+        VkSamplerCreateInfo si{};
+        si.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+        si.magFilter = VK_FILTER_NEAREST; si.minFilter = VK_FILTER_NEAREST;
+        si.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        si.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        vkCreateSampler(ctx_.device(), &si, nullptr, &nearestSamp);
+        resourceTable_->setDefaultSampler(nearestSamp);
+    }
+
+    // --- Acceleration structures ---
+    if (ctx_.rayTracingAvailable()) {
+        accelBuilder_ = std::make_unique<AccelerationStructureBuilder>();
+        accelBuilder_->buildBLAS(ctx_, scene_);
+    }
+
     // --- Passes ---
-    auto fp = std::make_unique<ForwardPass>();
-    if (!fp->initialize(ctx_)) {
-        std::cerr << "[Renderer] ForwardPass initialization failed\n";
+    // 1. Z-PrePass
+    auto prepass = std::make_unique<PreDepthPass>();
+    prepass->setResources(*resourceTable_);
+    prepass->setScene(scene_);
+    if (!prepass->initialize(ctx_)) {
+        std::cerr << "[Renderer] PreDepthPass initialization failed\n";
         return false;
     }
-    fp->setScene(scene_);
-    passes_.push_back(std::move(fp));
+    passes_.push_back(std::move(prepass));
+
+    // 2. Geometry Pass (GBuffer)
+    auto geom = std::make_unique<GeometryPass>();
+    geom->setResources(*resourceTable_);
+    geom->setScene(scene_);
+    if (!geom->initialize(ctx_)) {
+        std::cerr << "[Renderer] GeometryPass initialization failed\n";
+        return false;
+    }
+    passes_.push_back(std::move(geom));
+
+    // 3. DDGI Probe Pass (compute: ray trace + blend probes)
+    if (ctx_.rayTracingAvailable()) {
+        auto ddgiVolume = std::make_unique<DDGIVolume>();
+        DDGIConfig ddgiCfg;
+        ddgiCfg.probeSpacing = scene_.modelRadius * 0.3f;
+        ddgiCfg.probeCounts = {16, 6, 16};
+        ddgiCfg.raysPerProbe = 64;
+        ddgiCfg.hysteresis = 0.98f;
+        ddgiCfg.depthSharpness = 50.0f;
+        if (ddgiVolume->initialize(ctx_, ddgiCfg, scene_)) {
+            auto ddgiProbe = std::make_unique<DDGIProbePass>();
+            ddgiProbe->setVolume(ddgiVolume.get());
+            ddgiProbe->setTLAS(accelBuilder_->tlas());
+            ddgiProbe->setResources(*resourceTable_);
+            if (ddgiProbe->initialize(ctx_)) {
+                passes_.push_back(std::move(ddgiProbe));
+            }
+
+            // Register DDGI outputs to ResourceTable
+            resourceTable_->set("ddgi.irradiance", ddgiVolume->irradianceView(),
+                                VK_FORMAT_R16G16B16A16_SFLOAT, ddgiVolume->atlasExtent(),
+                                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+            resourceTable_->set("ddgi.depth", ddgiVolume->depthView(),
+                                VK_FORMAT_R16G16_SFLOAT, ddgiVolume->atlasExtent(),
+                                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+            resourceTable_->setSampler("ddgi.sampler", ddgiVolume->atlasSampler());
+
+            // Store for shutdown + frame loop
+            ddgiVolume_ = std::move(ddgiVolume);
+            ddgiEnabled_ = true;
+        }
+    }
+
+    // 4. Deferred Lighting Pass
+    auto lighting = std::make_unique<DeferredLightingPass>();
+    lighting->setResources(*resourceTable_);
+    lighting->setScene(scene_);
+    if (ddgiEnabled_) {
+        lighting->setDDGIVolume(ddgiVolume_.get());
+        lighting->setDDGIEnabled(true);
+    }
+    if (!lighting->initialize(ctx_)) {
+        std::cerr << "[Renderer] DeferredLightingPass initialization failed\n";
+        return false;
+    }
+    passes_.push_back(std::move(lighting));
+
+    // 4. Post-Process Pass
+    auto post = std::make_unique<PostProcessPass>();
+    post->setResources(*resourceTable_);
+    if (!post->initialize(ctx_)) {
+        std::cerr << "[Renderer] PostProcessPass initialization failed\n";
+        return false;
+    }
+    passes_.push_back(std::move(post));
 
     // --- Command buffers ---
     {
@@ -105,8 +200,20 @@ bool Renderer::initialize(unsigned int width, unsigned int height) {
 }
 
 void Renderer::mainLoop() {
-    if (!ready_) return;
-    while (window_.pumpMessages()) drawFrame();
+    if (!ready_) {
+        std::cerr << "[Renderer] Not ready, exiting\n";
+        return;
+    }
+    std::cerr << "[Renderer] Entering main loop\n";
+    while (window_.pumpMessages()) {
+        try {
+            drawFrame();
+        } catch (const std::exception& e) {
+            std::cerr << "[Renderer] Exception in drawFrame: " << e.what() << "\n";
+            break;
+        }
+    }
+    std::cerr << "[Renderer] Main loop ended\n";
     if (ctx_.device() != VK_NULL_HANDLE) vkDeviceWaitIdle(ctx_.device());
 }
 
@@ -120,6 +227,18 @@ void Renderer::shutdown() {
         pass->shutdown();
     }
     passes_.clear();
+
+    // Shut down DDGI
+    if (ddgiVolume_) {
+        ddgiVolume_->shutdown(ctx_.device());
+        ddgiVolume_.reset();
+    }
+
+    // Shut down acceleration structures
+    if (accelBuilder_) {
+        accelBuilder_->shutdown(ctx_);
+        accelBuilder_.reset();
+    }
 
     // Destroy sync objects
     for (auto& sem : imageAvailableSemaphores_) {
@@ -178,6 +297,16 @@ void Renderer::drawFrame() {
     if (keys_['A']) scene_.camera.pan(-0.1f, 0);
     if (keys_['D']) scene_.camera.pan(0.1f, 0);
 
+    // Rebuild TLAS each frame
+    if (accelBuilder_) {
+        accelBuilder_->buildTLAS(ctx_, scene_);
+    }
+
+    // Scroll DDGI probe grid with camera
+    if (ddgiVolume_) {
+        ddgiVolume_->scroll(scene_.camera.position());
+    }
+
     // Execute all passes
     for (auto& pass : passes_) {
         pass->record(cmd, currentFrame_, imageIndex);
@@ -222,6 +351,11 @@ void Renderer::drawFrame() {
     }
 
     currentFrame_ = (currentFrame_ + 1) % RenderPass::kMaxFramesInFlight;
+
+    // Swap DDGI history after each frame
+    if (ddgiVolume_) {
+        ddgiVolume_->swapHistory();
+    }
 }
 
 void Renderer::recreateSwapchain() {

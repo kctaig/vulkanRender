@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -13,6 +14,9 @@
 
 namespace vr {
 
+// Forward-declare for ResourceTable reference in RenderPass
+class ResourceTable;
+
 class VulkanContext {
   public:
     struct CreateInfo {
@@ -21,6 +25,7 @@ class VulkanContext {
         unsigned int initialWidth = 1600;
         unsigned int initialHeight = 900;
         bool enableValidation = true;
+        bool enableRayTracing = true;  // attempt to enable RT if supported
     };
 
     struct QueueFamilyIndices {
@@ -36,6 +41,15 @@ class VulkanContext {
         VkSurfaceCapabilitiesKHR capabilities{};
         std::vector<VkSurfaceFormatKHR> formats;
         std::vector<VkPresentModeKHR> presentModes;
+    };
+
+    /// Cached ray tracing properties queried at device creation.
+    struct RTProperties {
+        VkPhysicalDeviceRayTracingPipelinePropertiesKHR pipelineProps{};
+        VkPhysicalDeviceAccelerationStructurePropertiesKHR accelProps{};
+        std::uint32_t shaderGroupHandleSize = 0;
+        std::uint32_t shaderGroupBaseAlignment = 0;
+        std::uint64_t maxRayDispatchInvocationCount = 0;
     };
 
     bool initialize(const CreateInfo& info);
@@ -84,10 +98,41 @@ class VulkanContext {
         VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage& image,
         VkDeviceMemory& imageMemory
     );
+    void createImage3D(
+        std::uint32_t width, std::uint32_t height, std::uint32_t depth, VkFormat format,
+        VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties,
+        VkImage& image, VkDeviceMemory& imageMemory
+    );
+    /// Create a 2D image with STORAGE_BIT | SAMPLED_BIT | extraUsage flags + DEVICE_LOCAL.
+    void createStorageImage(std::uint32_t width, std::uint32_t height, VkFormat format,
+                            VkImageUsageFlags extraUsage, VkImage& image,
+                            VkDeviceMemory& imageMemory);
     [[nodiscard]] VkImageView createImageView(
         VkImage image, VkFormat format, VkImageAspectFlags aspectFlags
     ) const;
+    [[nodiscard]] VkImageView createImageViewLayer(
+        VkImage image, VkFormat format, VkImageAspectFlags aspectFlags,
+        std::uint32_t baseMipLevel, std::uint32_t levelCount,
+        std::uint32_t baseArrayLayer, std::uint32_t layerCount
+    ) const;
     [[nodiscard]] VkShaderModule createShaderModule(const std::vector<char>& code) const;
+
+    // --- Ray tracing ---
+    [[nodiscard]] bool rayTracingAvailable() const { return rtAvailable_; }
+    [[nodiscard]] const RTProperties& rtProperties() const { return rtProps_; }
+    /// Get buffer device address (requires VK_KHR_buffer_device_address).
+    [[nodiscard]] VkDeviceAddress getBufferDeviceAddress(VkBuffer buffer) const;
+
+    // --- RT function pointers ---
+    PFN_vkCreateAccelerationStructureKHR vkCreateAccelerationStructureKHR = nullptr;
+    PFN_vkDestroyAccelerationStructureKHR vkDestroyAccelerationStructureKHR = nullptr;
+    PFN_vkGetAccelerationStructureBuildSizesKHR vkGetAccelerationStructureBuildSizesKHR = nullptr;
+    PFN_vkCmdBuildAccelerationStructuresKHR vkCmdBuildAccelerationStructuresKHR = nullptr;
+    PFN_vkGetAccelerationStructureDeviceAddressKHR vkGetAccelerationStructureDeviceAddressKHR = nullptr;
+    PFN_vkGetBufferDeviceAddressKHR vkGetBufferDeviceAddressKHR = nullptr;
+    PFN_vkCreateRayTracingPipelinesKHR vkCreateRayTracingPipelinesKHR = nullptr;
+    PFN_vkGetRayTracingShaderGroupHandlesKHR vkGetRayTracingShaderGroupHandlesKHR = nullptr;
+    PFN_vkCmdTraceRaysKHR vkCmdTraceRaysKHR = nullptr;
 
     // --- Command buffer allocation ---
     [[nodiscard]] std::vector<VkCommandBuffer> allocateCommandBuffers(std::uint32_t count) const;
@@ -141,6 +186,8 @@ class VulkanContext {
     [[nodiscard]] bool checkDeviceExtensionSupport(VkPhysicalDevice device) const;
     [[nodiscard]] QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device) const;
     [[nodiscard]] SwapchainSupportDetails querySwapchainSupport(VkPhysicalDevice device) const;
+    void loadRTFunctionPointers();
+    void queryRTProperties();
     [[nodiscard]] VkSurfaceFormatKHR chooseSwapSurfaceFormat(
         const std::vector<VkSurfaceFormatKHR>& formats
     ) const;
@@ -152,6 +199,8 @@ class VulkanContext {
     HWND windowHandle_ = nullptr;
     HINSTANCE instanceHandle_ = nullptr;
     bool validationEnabled_ = false;
+    bool rtAvailable_ = false;
+    RTProperties rtProps_{};
 
     VkInstance instance_ = VK_NULL_HANDLE;
     VkDebugUtilsMessengerEXT debugMessenger_ = VK_NULL_HANDLE;

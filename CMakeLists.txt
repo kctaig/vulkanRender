@@ -49,17 +49,33 @@ set(VR_SOURCES
     src/renderer/ForwardPass.cpp
     src/renderer/PipelineBuilder.cpp
     src/renderer/RenderPass.cpp
+    src/renderer/PreDepthPass.cpp
+    src/renderer/GeometryPass.cpp
+    src/renderer/DeferredLightingPass.cpp
+    src/renderer/PostProcessPass.cpp
+    src/renderer/AccelerationStructure.cpp
+    src/renderer/DDGIVolume.cpp
+    src/renderer/DDGIProbePass.cpp
 )
 
 set(VR_HEADERS
     include/core/Application.h
     include/core/VulkanContext.h
     include/core/Window.h
+    include/core/VulkanResource.h
     include/renderer/RenderPass.h
     include/renderer/DescriptorWriter.h
     include/renderer/Renderer.h
     include/renderer/ForwardPass.h
     include/renderer/PipelineBuilder.h
+    include/renderer/ResourceTable.h
+    include/renderer/PreDepthPass.h
+    include/renderer/GeometryPass.h
+    include/renderer/DeferredLightingPass.h
+    include/renderer/PostProcessPass.h
+    include/renderer/AccelerationStructure.h
+    include/renderer/DDGIVolume.h
+    include/renderer/DDGIProbePass.h
     include/scene/AssetManager.h
     include/scene/Camera.h
     include/scene/Scene.h
@@ -86,6 +102,7 @@ file(MAKE_DIRECTORY ${VR_SHADER_BINARY_DIR})
 file(GLOB VR_SHADER_SOURCES
     ${VR_SHADER_SOURCE_DIR}/*.vert
     ${VR_SHADER_SOURCE_DIR}/*.frag
+    ${VR_SHADER_SOURCE_DIR}/*.comp
 )
 
 set(VR_SHADER_OUTPUTS)
@@ -95,7 +112,7 @@ foreach(SHADER_FILE IN LISTS VR_SHADER_SOURCES)
 
     add_custom_command(
         OUTPUT ${SPIRV_FILE}
-        COMMAND ${Vulkan_GLSLC_EXECUTABLE} --target-env=vulkan1.2 ${SHADER_FILE} -o ${SPIRV_FILE}
+        COMMAND ${Vulkan_GLSLC_EXECUTABLE} --target-env=vulkan1.2 -I${VR_SHADER_SOURCE_DIR} ${SHADER_FILE} -o ${SPIRV_FILE}
         DEPENDS ${SHADER_FILE}
         VERBATIM
         COMMENT "Compiling shader ${SHADER_NAME}"

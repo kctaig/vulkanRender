@@ -1,5 +1,6 @@
 #include "renderer/PipelineBuilder.h"
 
+#include <iostream>
 #include <stdexcept>
 
 namespace vr {
@@ -11,6 +12,11 @@ PipelineBuilder& PipelineBuilder::vertexShader(const std::string& spvPath) {
 
 PipelineBuilder& PipelineBuilder::fragmentShader(const std::string& spvPath) {
     fragSpvPath_ = spvPath;
+    return *this;
+}
+
+PipelineBuilder& PipelineBuilder::computeShader(const std::string& spvPath) {
+    compSpvPath_ = spvPath;
     return *this;
 }
 
@@ -41,8 +47,13 @@ PipelineBuilder& PipelineBuilder::frontFace(VkFrontFace face) {
 }
 
 PipelineBuilder& PipelineBuilder::colorAttachment(VkFormat format, bool blend) {
-    colorFormat_ = format;
+    colorFormats_ = {format};
     blend_ = blend;
+    return *this;
+}
+
+PipelineBuilder& PipelineBuilder::colorAttachments(const std::vector<VkFormat>& formats) {
+    colorFormats_ = formats;
     return *this;
 }
 
@@ -76,22 +87,29 @@ PipelineBuilder& PipelineBuilder::pushConstant(VkShaderStageFlags stages,
 void PipelineBuilder::destroyShaderModules() const {
     if (vertModule_) vkDestroyShaderModule(ctx_->device(), vertModule_, nullptr);
     if (fragModule_) vkDestroyShaderModule(ctx_->device(), fragModule_, nullptr);
+    if (compModule_) vkDestroyShaderModule(ctx_->device(), compModule_, nullptr);
 }
 
 VkPipeline PipelineBuilder::build(VkRenderPass renderPass,
                                    std::uint32_t subpass) const {
     // --- Shader modules ---
-    auto vertCode = VulkanContext::readBinaryFile(vertSpvPath_.c_str());
-    auto fragCode = VulkanContext::readBinaryFile(fragSpvPath_.c_str());
-    vertModule_ = ctx_->createShaderModule(vertCode);
-    fragModule_ = ctx_->createShaderModule(fragCode);
+    std::vector<VkPipelineShaderStageCreateInfo> stages;
 
-    VkPipelineShaderStageCreateInfo stages[] = {
-        {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0,
-         VK_SHADER_STAGE_VERTEX_BIT, vertModule_, "main", nullptr},
-        {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0,
-         VK_SHADER_STAGE_FRAGMENT_BIT, fragModule_, "main", nullptr},
-    };
+    if (!vertSpvPath_.empty()) {
+        auto vertCode = VulkanContext::readBinaryFile(vertSpvPath_.c_str());
+        vertModule_ = ctx_->createShaderModule(vertCode);
+        stages.push_back({VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                          nullptr, 0, VK_SHADER_STAGE_VERTEX_BIT,
+                          vertModule_, "main", nullptr});
+    }
+
+    if (!fragSpvPath_.empty()) {
+        auto fragCode = VulkanContext::readBinaryFile(fragSpvPath_.c_str());
+        fragModule_ = ctx_->createShaderModule(fragCode);
+        stages.push_back({VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO,
+                          nullptr, 0, VK_SHADER_STAGE_FRAGMENT_BIT,
+                          fragModule_, "main", nullptr});
+    }
 
     // --- Vertex input ---
     VkPipelineVertexInputStateCreateInfo vi{};
@@ -134,15 +152,19 @@ VkPipeline PipelineBuilder::build(VkRenderPass renderPass,
     ds.depthCompareOp = depthOp_;
 
     // --- Color blend ---
-    VkPipelineColorBlendAttachmentState cb{};
-    cb.blendEnable = blend_ ? VK_TRUE : VK_FALSE;
-    cb.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
-                        VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    std::vector<VkPipelineColorBlendAttachmentState> colorBlends;
+    for (std::size_t i = 0; i < colorFormats_.size(); ++i) {
+        VkPipelineColorBlendAttachmentState cb{};
+        cb.blendEnable = blend_ ? VK_TRUE : VK_FALSE;
+        cb.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                            VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+        colorBlends.push_back(cb);
+    }
 
     VkPipelineColorBlendStateCreateInfo cbs{};
     cbs.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-    cbs.attachmentCount = 1;
-    cbs.pAttachments = &cb;
+    cbs.attachmentCount = static_cast<std::uint32_t>(colorBlends.size());
+    cbs.pAttachments = colorBlends.data();
 
     // --- Dynamic ---
     VkPipelineDynamicStateCreateInfo dy{};
@@ -167,8 +189,8 @@ VkPipeline PipelineBuilder::build(VkRenderPass renderPass,
     // --- Pipeline ---
     VkGraphicsPipelineCreateInfo pi{};
     pi.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    pi.stageCount = 2;
-    pi.pStages = stages;
+    pi.stageCount = static_cast<std::uint32_t>(stages.size());
+    pi.pStages = stages.data();
     pi.pVertexInputState = &vi;
     pi.pInputAssemblyState = &ia;
     pi.pViewportState = &vs;
@@ -185,6 +207,41 @@ VkPipeline PipelineBuilder::build(VkRenderPass renderPass,
     if (vkCreateGraphicsPipelines(ctx_->device(), VK_NULL_HANDLE, 1, &pi,
                                    nullptr, &pipeline) != VK_SUCCESS) {
         throw std::runtime_error("PipelineBuilder: vkCreateGraphicsPipelines failed");
+    }
+
+    return pipeline;
+}
+
+VkPipeline PipelineBuilder::buildCompute() const {
+    auto compCode = VulkanContext::readBinaryFile(compSpvPath_.c_str());
+    compModule_ = ctx_->createShaderModule(compCode);
+
+    VkPipelineShaderStageCreateInfo stage{};
+    stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+    stage.module = compModule_;
+    stage.pName = "main";
+
+    VkPipelineLayoutCreateInfo pl{};
+    pl.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pl.setLayoutCount = setLayout_ ? 1u : 0u;
+    pl.pSetLayouts = &setLayout_;
+    pl.pushConstantRangeCount = hasPushConst_ ? 1u : 0u;
+    pl.pPushConstantRanges = &pushConst_;
+
+    if (vkCreatePipelineLayout(ctx_->device(), &pl, nullptr, &pipelineLayout_) != VK_SUCCESS) {
+        throw std::runtime_error("PipelineBuilder: vkCreatePipelineLayout (compute) failed");
+    }
+
+    VkComputePipelineCreateInfo ci{};
+    ci.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    ci.stage = stage;
+    ci.layout = pipelineLayout_;
+
+    VkPipeline pipeline = VK_NULL_HANDLE;
+    if (vkCreateComputePipelines(ctx_->device(), VK_NULL_HANDLE, 1, &ci,
+                                  nullptr, &pipeline) != VK_SUCCESS) {
+        throw std::runtime_error("PipelineBuilder: vkCreateComputePipelines failed");
     }
 
     return pipeline;

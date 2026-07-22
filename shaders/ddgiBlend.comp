@@ -1,0 +1,25 @@
+#version 460
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(set = 0, binding = 0, rgba16f) uniform image2D irradianceAtlas;
+layout(set = 0, binding = 1, rg16f)  uniform image2D depthAtlas;
+layout(set = 0, binding = 2) uniform sampler2D irradianceHistory;
+layout(set = 0, binding = 3) uniform sampler2D depthHistory;
+
+layout(push_constant) uniform PC {
+    float hysteresis;
+} pc;
+
+void main() {
+    ivec2 tc = ivec2(gl_GlobalInvocationID.xy);
+
+    vec4 newIrr   = imageLoad(irradianceAtlas, tc);
+    vec4 newDepth = imageLoad(depthAtlas, tc);
+    vec4 oldIrr   = texelFetch(irradianceHistory, tc, 0);
+    vec4 oldDepth = texelFetch(depthHistory, tc, 0);
+
+    float h = pc.hysteresis;
+    imageStore(irradianceAtlas, tc, mix(newIrr, oldIrr, h));
+    imageStore(depthAtlas,      tc, mix(newDepth, oldDepth, h));
+}

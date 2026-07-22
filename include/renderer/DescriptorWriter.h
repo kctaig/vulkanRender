@@ -43,6 +43,43 @@ class DescriptorWriter {
         return *this;
     }
 
+    DescriptorWriter& bindStorageBuffer(std::uint32_t binding, VkBuffer buffer,
+                                        VkDeviceSize range,
+                                        VkDeviceSize offset = 0) {
+        VkDescriptorBufferInfo info{buffer, offset, range};
+        bufferInfos_.push_back(info);
+        writes_.push_back({VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr,
+                            VK_NULL_HANDLE, binding, 0, 1,
+                            VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                            nullptr, &bufferInfos_.back(), nullptr});
+        return *this;
+    }
+
+    DescriptorWriter& bindStorageImage(std::uint32_t binding, VkImageView view,
+                                        VkImageLayout layout = VK_IMAGE_LAYOUT_GENERAL) {
+        VkDescriptorImageInfo info{VK_NULL_HANDLE, view, layout};
+        imageInfos_.push_back(info);
+        writes_.push_back({VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, nullptr,
+                            VK_NULL_HANDLE, binding, 0, 1,
+                            VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+                            &imageInfos_.back(), nullptr, nullptr});
+        return *this;
+    }
+
+    DescriptorWriter& bindAccelStruct(std::uint32_t binding,
+                                       VkAccelerationStructureKHR as) {
+        VkWriteDescriptorSetAccelerationStructureKHR asInfo{};
+        asInfo.sType =
+            VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
+        asInfo.accelerationStructureCount = 1;
+        asInfo.pAccelerationStructures = &asAccelStructs_.emplace_back(as);
+        writes_.push_back({VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET, &asInfo,
+                            VK_NULL_HANDLE, binding, 0, 1,
+                            VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR,
+                            nullptr, nullptr, nullptr});
+        return *this;
+    }
+
     void build(VkDescriptorSetLayout layout, VkDescriptorPool pool,
                VkDescriptorSet* outSet) {
         VkDescriptorSetAllocateInfo ai{};
@@ -63,6 +100,7 @@ class DescriptorWriter {
     std::vector<VkDescriptorBufferInfo> bufferInfos_;
     std::vector<VkDescriptorImageInfo> imageInfos_;
     std::vector<VkWriteDescriptorSet> writes_;
+    std::vector<VkAccelerationStructureKHR> asAccelStructs_;
 };
 
 }  // namespace vr

@@ -14,7 +14,10 @@
 
 #include "core/VulkanContext.h"
 #include "core/Window.h"
+#include "renderer/AccelerationStructure.h"
+#include "renderer/DDGIVolume.h"
 #include "renderer/RenderPass.h"
+#include "renderer/ResourceTable.h"
 #include "scene/Scene.h"
 
 namespace vr {
@@ -36,7 +39,12 @@ class Renderer {
     Window window_;
     VulkanContext ctx_;
     Scene scene_;
+    std::unique_ptr<ResourceTable> resourceTable_;
+    std::unique_ptr<AccelerationStructureBuilder> accelBuilder_;
+    std::unique_ptr<class DDGIVolume> ddgiVolume_;
     std::vector<std::unique_ptr<RenderPass>> passes_;
+
+    bool ddgiEnabled_ = false;
 
     // Input state
     bool rightDragActive_ = false;
